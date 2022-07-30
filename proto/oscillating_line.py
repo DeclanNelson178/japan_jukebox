@@ -1,7 +1,6 @@
 import curses
 import time
 
-from constants import GREEN, RED
 from utils import (
     set_up_curses,
     add_title,
@@ -12,6 +11,7 @@ from utils import (
     get_max_amplitude,
     configure_display_screen,
 )
+from constants import GREEN, RED
 
 
 def oscillating_line_display(

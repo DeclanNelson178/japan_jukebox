@@ -1,46 +1,68 @@
 import argparse
-import os
-from pathlib import Path
+import time
 
 import numpy as np
 
 from oscillating_line import oscillating_line
 from spectrogram import spectrogram
-from trappin_scraper import download_songs, convert_mp3_to_wav, convert_mp4_to_mp3
 
-### CLI ARGS ###
-parser = argparse.ArgumentParser(description='Trappin in Japan Jukebox')
-parser.add_argument('-v', '--volume', default=None)
-parser.add_argument('-t', '--type', default='fft')
+# CLI ARGS
+from utils import get_volumes, match_song, setup
+
+parser = argparse.ArgumentParser(description="Trappin in Japan Jukebox")
+parser.add_argument("-v", "--volume", default=None)
+parser.add_argument("-t", "--type", default="fft")
+parser.add_argument("-r", "--repeat", default=False)
 args = parser.parse_args()
 
 VOLUME = args.volume
 TYPE = args.type
+REPEAT = args.repeat
 
+# Playlist URL
 START_URL = "https://www.youtube.com/playlist?list=PL03tCdy8gL5JvpLbxw6SsXaNDBot7b_Ok"
 
 
-def get_volumes():
-	files = os.listdir('audio/wav')
-	return [file[:-4] for file in files]
+if __name__ == "__main__":
+    setup(START_URL)
 
+    # get song options
+    volumes = get_volumes()
 
-if __name__ == '__main__':
-	if not Path('audio/mp4').exists() or not len(os.listdir('audio/mp4')):
-		download_songs(START_URL)
+    # exit when user presses a key
+    user_done = False
+    start_time = time.time()
+    played_songs = set()
+    while not user_done:
+        if len(played_songs) == len(volumes):
+            # reset playlist if all songs have been played
+            played_songs.clear()
 
-	if not Path('audio/mp3').exists() or not len(os.listdir('audio/mp3')):
-		convert_mp4_to_mp3()
+        # select song to begin with
+        if VOLUME:
+            audio_name = match_song(int(VOLUME), volumes)
+            if not REPEAT:
+                # avoids repeating on second loop through
+                VOLUME = None
+                played_songs.add(audio_name)
+        else:
+            # select song at random to play
+            while (audio_name := np.random.choice(volumes)) in played_songs:
+                continue
+            played_songs.add(audio_name)
 
-	if not Path('audio/wav').exists() or not len(os.listdir('audio/wav')):
-		convert_mp3_to_wav()
+        if TYPE == "basic":
+            # just amplitude
+            user_done = oscillating_line(audio_name)
+        else:
+            # fft
+            user_done = spectrogram(audio_name)
 
-	volumes = get_volumes()
-	user_done = False
-	while not user_done:
-		audio_name = np.random.choice(volumes)
+    # report session time
+    total_time = time.time() - start_time
+    total_minutes = total_time / 60
+    hours = total_minutes // 60
+    minutes = total_minutes % 60
+    seconds = total_time % 60
 
-		if TYPE == 'basic':
-			user_done = oscillating_line(audio_name)
-		else:
-			user_done = spectrogram(audio_name)
+    print(f"Time: {hours}:{minutes}:{seconds}")

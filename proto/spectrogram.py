@@ -176,6 +176,7 @@ def spectrogram(audio_name):
             window_rate,
         )
         break_down_curses()
+        print(f"Time taken: {time.time() - s}")
     except Exception as e:
         scr.clear()
         pad.clear()
