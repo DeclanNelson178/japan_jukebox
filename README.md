@@ -2,7 +2,7 @@
 Play 'Trappin in Japan' from terminal.
 
 ## Set Up:
-Download codebase and install dependencies from `requirements.txt`. Once everything is installed,
+Download codebase and install dependencies from `requirements.txt`. Next set os.environ variable for home path. Once everything is installed,
 run `python3 driver.py`
 - Program begins by creating audio and cache directories in same folder as driver file
 - Downloads all songs from YouTube
