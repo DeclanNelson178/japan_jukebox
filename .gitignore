@@ -2,3 +2,5 @@ audio
 cache
 proto
 __pycache__
+.idea
+
