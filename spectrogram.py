@@ -1,6 +1,7 @@
 import argparse
 import curses
 import numpy as np
+import os
 import pickle
 import time
 from constants import (
@@ -59,7 +60,7 @@ def scale_amplitudes(frequencies, height):
 
 def spectrogram_data(signal, scr, audio_length, window_rate, audio_name):
     """Convert .wav file to pixel height for varying frequency groups"""
-    data_path = f"./cache/{audio_name}_sfft.bin"
+    data_path = f"{os.getenv('HOME_PATH')}/cache/{audio_name}_sfft.bin"
     if Path(data_path).exists():
         return pickle.load(open(data_path, "rb"))
 

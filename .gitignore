@@ -3,4 +3,4 @@ cache
 proto
 __pycache__
 .idea
-
+.env

@@ -2,12 +2,19 @@ import argparse
 import time
 
 import numpy as np
+from dotenv import load_dotenv
+from pathlib import Path
 
 from oscillating_line import oscillating_line
 from spectrogram import spectrogram
 
 # CLI ARGS
 from utils import get_volumes, match_song, setup
+
+
+load_dotenv()
+env_path = Path(".") / ".env"
+load_dotenv(dotenv_path=env_path)
 
 parser = argparse.ArgumentParser(description="Trappin in Japan Jukebox")
 parser.add_argument("-v", "--volume", default=None)

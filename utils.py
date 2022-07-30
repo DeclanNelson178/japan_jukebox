@@ -1,9 +1,9 @@
 import curses
+import numpy as np
 import os
 import wave
+from dotenv import load_dotenv
 from pathlib import Path
-
-import numpy as np
 from playsound import playsound
 
 # SETUP HELPERS
@@ -12,15 +12,21 @@ from song_scraper import download_songs, convert_mp4_to_mp3, convert_mp3_to_wav
 
 def setup(url):
     # set up file structure and get songs
-    if not Path("audio/mp4").exists() or not len(os.listdir("audio/mp4")):
+    if not Path(f"{os.getenv('HOME_PATH')}/audio/mp4").exists() or not len(
+        os.listdir(f"{os.getenv('HOME_PATH')}/audio/mp4")
+    ):
         download_songs(url)
 
     # convert mp4 to mp3 so that we can play audio with playsound package
-    if not Path("audio/mp3").exists() or not len(os.listdir("audio/mp3")):
+    if not Path(f"{os.getenv('HOME_PATH')}/audio/mp3").exists() or not len(
+        os.listdir(f"{os.getenv('HOME_PATH')}/audio/mp3")
+    ):
         convert_mp4_to_mp3()
 
     # decode mp3 audio to analyze signal
-    if not Path("audio/wav").exists() or not len(os.listdir("audio/wav")):
+    if not Path(f"{os.getenv('HOME_PATH')}/audio/wav").exists() or not len(
+        os.listdir(f"{os.getenv('HOME_PATH')}/audio/wav")
+    ):
         convert_mp3_to_wav()
 
 
@@ -69,12 +75,12 @@ def configure_display_screen(audio_name, height, width, buffer=0):
 # AUDIO HELPERS
 def play(audio_name):
     """Play mp3 file asynchronously"""
-    playsound(f"audio/mp3/{audio_name}.mp3", False)
+    playsound(f"{os.getenv('HOME_PATH')}/audio/mp3/{audio_name}.mp3", False)
 
 
 def load_song(audio_name):
     """Read in song data"""
-    song = wave.open(f"audio/wav/{audio_name}.wav", "r")
+    song = wave.open(f"{os.getenv('HOME_PATH')}/audio/wav/{audio_name}.wav", "r")
     if song.getnchannels() == 2:
         wave.setnchannels(1)
 
@@ -92,7 +98,7 @@ def song_length(song):
 
 def get_max_amplitude(signal, audio_name):
     """Largest signal in song file"""
-    data_path = f"cache/{audio_name}_max_amplitude.txt"
+    data_path = f"{os.getenv('HOME_PATH')}/cache/{audio_name}_max_amplitude.txt"
     if Path(data_path).exists():
         with open(data_path, "r") as file:
             max_amplitude = int(file.read())
@@ -107,7 +113,7 @@ def get_max_amplitude(signal, audio_name):
 # SONG SELECTION HELPERS
 def get_volumes():
     """Get all possible songs to play"""
-    files = os.listdir("audio/wav")
+    files = os.listdir(f"{os.getenv('HOME_PATH')}/audio/wav")
     return [file[:-4] for file in files]
 
 
