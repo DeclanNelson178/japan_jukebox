@@ -1,5 +1,0 @@
-RED = 1
-MAGENTA = 2
-YELLOW = 3
-GREEN = 4
-CYAN = 5
