@@ -7,7 +7,9 @@ import threading
 
 from visualizer import (
     PALETTES,
+    WaveEnvelope,
     compose_frame,
+    compose_wave,
     help_frame,
     parse_input,
     _read_pending,
@@ -122,6 +124,85 @@ def test_parse_input_sgr_mouse():
 def test_parse_input_mixed_stream():
     evts = parse_input("g\x1b[<35;10;3Mq")
     assert evts == [("key", "g"), ("mouse", 10, 3), ("key", "q")]
+
+
+# --- wave renderer --------------------------------------------------------
+
+def test_wave_dimensions():
+    pal = PALETTES["trap"]
+    lines = compose_wave([0.5] * 8, 8, 10, pal)
+    assert len(lines) == 10
+    for line in lines:
+        assert len(visible(line)) == 8
+
+
+def test_wave_silence_is_blank():
+    pal = PALETTES["trap"]
+    lines = compose_wave([0.0] * 6, 6, 8, pal)
+    for line in lines:
+        assert visible(line).strip() == ""
+
+
+def test_wave_fills_from_center_outward():
+    pal = PALETTES["trap"]
+    # a small amplitude lights rows near the center axis, not the edges
+    lines = compose_wave([0.25] * 6, 6, 8, pal)
+    assert visible(lines[0]).strip() == ""     # top edge empty
+    assert visible(lines[-1]).strip() == ""    # bottom edge empty
+    middle = "".join(visible(l) for l in lines[3:5])
+    assert middle.strip() != ""                # axis lit
+
+
+def test_wave_full_amplitude_reaches_both_edges():
+    pal = PALETTES["trap"]
+    lines = compose_wave([1.0] * 6, 6, 8, pal)
+    assert visible(lines[0]) == "█" * 6
+    assert visible(lines[-1]) == "█" * 6
+
+
+# --- wave envelope --------------------------------------------------------
+
+def test_envelope_silence_is_zero():
+    env = WaveEnvelope()
+    assert env.update(np.zeros(1024)) == 0.0
+
+
+def test_envelope_rises_and_normalizes_toward_full():
+    env = WaveEnvelope()
+    loud = np.full(1024, 0.4, dtype=np.float32)
+    out = 0.0
+    for _ in range(40):
+        out = env.update(loud)
+    assert out > 0.9          # a sustained level normalizes to fill the axis
+
+
+def test_envelope_output_bounded():
+    env = WaveEnvelope()
+    rng = np.linspace(-1, 1, 1024)
+    for _ in range(50):
+        v = env.update(rng)
+        assert 0.0 <= v <= 1.0
+
+
+def test_envelope_attack_faster_than_release():
+    """A jump up should move more per step than the same-sized drop back."""
+    up = WaveEnvelope()
+    # prime the running peak so targets are ~1.0 on loud, ~0 on silence
+    loud = np.full(1024, 0.5, dtype=np.float32)
+    for _ in range(30):
+        up.update(loud)
+    settled = up.value
+    rise_step = up.update(loud) - settled          # already near top, tiny
+    # fresh envelope: measure one attack step from rest vs one release step
+    env = WaveEnvelope()
+    env.peak = 0.5                                   # fixed reference
+    a0 = env.value
+    env.update(loud)                                 # one attack step
+    attack_delta = env.value - a0
+    env.value = 1.0
+    env.update(np.zeros(1024))                        # one release step
+    release_delta = env.value - 1.0                  # negative
+    assert attack_delta > abs(release_delta)
 
 
 def test_read_pending_returns_available_without_blocking():

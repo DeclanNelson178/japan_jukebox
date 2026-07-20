@@ -18,19 +18,12 @@ import numpy as np
 
 from render import (
     RESET,
-    braille_waveform,
     column_glyphs,
     frame_payload,
     sample_gradient,
     truecolor_fg,
 )
-from spectrum import (
-    BeatDetector,
-    PeakHold,
-    Smoother,
-    compute_bands,
-    log_band_edges,
-)
+from spectrum import BeatDetector
 
 # Frequency-swept gradients (position 0 = bass/left .. 1 = treble/right).
 PALETTES = {
@@ -90,7 +83,7 @@ def compose_frame(values, peaks, width, height, palette, beat=0.0, mirror=False)
     Returns exactly `height` strings, each `width` cells wide.
     """
     if mirror:
-        return _compose_mirror(values, width, height, palette, beat)
+        return compose_wave(values, width, height, palette, beat)
 
     vals = _resample(values, width)
     pks = _resample(peaks, width)
@@ -119,13 +112,22 @@ def compose_frame(values, peaks, width, height, palette, beat=0.0, mirror=False)
     return lines
 
 
-def _compose_mirror(values, width, height, palette, beat):
+def compose_wave(values, width, height, palette, beat=0.0):
+    """Render a filled waveform envelope mirrored around a center zero axis.
+
+    `values` are per-column half-amplitudes in [0, 1] (resampled to `width`).
+    Each column fills from the center line outward — solid at the axis,
+    tapering to partial-block tips — so a scrolling loudness envelope reads as
+    a symmetric wave that swells on the beat. Returns `height` strings.
+    """
     vals = _resample(values, width)
     top_h = height // 2
     bot_h = height - top_h
     # Each half grows from the center line outward.
     top_cols = [column_glyphs(v, top_h) for v in vals]
     bot_cols = [[_FLIP[g] for g in column_glyphs(v, bot_h)] for v in vals]
+    # Color depends only on the column; sample the gradient once per column.
+    col_base = [sample_gradient(palette, x / max(1, width - 1)) for x in range(width)]
     boost = min(0.6, 0.6 * beat)
 
     lines = []
@@ -134,17 +136,18 @@ def _compose_mirror(values, width, height, palette, beat):
         # distance from center drives which cell of each half we're drawing
         if in_top:
             cell = top_h - 1 - r          # 0 at center, grows toward top edge
+            span = top_h
         else:
             cell = r - top_h              # 0 at center, grows toward bottom edge
+            span = bot_h
         parts = []
         for x in range(width):
             glyph = top_cols[x][cell] if in_top else bot_cols[x][cell]
             if glyph == " ":
                 parts.append(" ")
                 continue
-            base = sample_gradient(palette, x / max(1, width - 1))
-            lift = 1.0 - cell / max(1, top_h)   # brighter toward the center
-            parts.append(truecolor_fg(_brighten(base, 1.0 + 0.4 * lift + boost)) + glyph)
+            lift = 1.0 - cell / max(1, span)   # brighter toward the center
+            parts.append(truecolor_fg(_brighten(col_base[x], 1.0 + 0.4 * lift + boost)) + glyph)
         lines.append("".join(parts) + RESET)
     return lines
 
@@ -154,8 +157,6 @@ _HELP_ROWS = [
     ("→  n", "skip to next song"),
     ("↑  ↓", "volume up / down"),
     ("g", "cycle color palette"),
-    ("m", "toggle mirror mode"),
-    ("w", "toggle waveform scope"),
     ("h", "toggle this help"),
     ("q", "quit"),
 ]
@@ -218,20 +219,32 @@ def parse_input(buf):
 # Live I/O shell (not unit tested — needs a real terminal + audio).
 # --------------------------------------------------------------------------
 
-class AutoGain:
-    """Log-compress magnitudes and normalize by a slowly decaying running max,
-    so quiet and loud passages both fill the display."""
+class WaveEnvelope:
+    """Turn a window of samples into one smoothed, auto-normalized loudness in
+    [0, 1] — the half-amplitude of a single new wave column.
 
-    def __init__(self, decay=0.9995, floor=1e-6):
+    RMS gives a stable loudness (louder = taller wave). A slowly decaying
+    running peak normalizes it so quiet and loud sections both fill the axis.
+    Fast attack lets beats punch through; slower release lets the wave settle
+    smoothly instead of flickering.
+    """
+
+    def __init__(self, attack=0.65, release=0.18, decay=0.9990, floor=1e-4):
+        self.attack = attack
+        self.release = release
         self.decay = decay
         self.floor = floor
-        self.peak = 1.0
+        self.peak = floor
+        self.value = 0.0
 
-    def __call__(self, bands):
-        mag = np.log1p(bands)
-        top = mag.max()
-        self.peak = max(self.peak * self.decay, top, self.floor)
-        return np.clip(mag / self.peak, 0.0, 1.0)
+    def update(self, window):
+        window = np.asarray(window, dtype=float)
+        rms = float(np.sqrt(np.mean(window ** 2))) if window.size else 0.0
+        self.peak = max(self.peak * self.decay, rms, self.floor)
+        target = min(1.0, rms / self.peak)
+        coef = self.attack if target > self.value else self.release
+        self.value += (target - self.value) * coef
+        return self.value
 
 
 def _fmt_time(seconds):
@@ -251,7 +264,7 @@ def _header(title, pos, dur, width, palette):
 
 
 def _footer(width, palette_name):
-    keys = "h help · space pause · → skip · ↑↓ vol · g palette · m mirror · w scope · q quit"
+    keys = "h help · space pause · → skip · ↑↓ vol · g palette · q quit"
     return f"\x1b[2m{keys}   [{palette_name}]{RESET}"
 
 
@@ -309,34 +322,34 @@ def _read_pending(fd=None):
     return b"".join(chunks).decode("utf-8", "ignore")
 
 
-def run(engine, title, palette_name="trap", n_bins=72, fps=30):
-    """Play `engine` and paint the spectrum until the song ends or the user
+def run(engine, title, palette_name="trap", fps=30):
+    """Play `engine` and paint the wave until the song ends or the user
     quits/skips. Returns True if the user asked to quit the whole session."""
-    edges = log_band_edges(n_bins, 40, 16000)
-    gain = AutoGain()
-    smoother = Smoother(n_bins, attack=0.55, decay=0.16)
-    peaks = PeakHold(n_bins, decay=0.012)
-    beat = BeatDetector(sensitivity=1.35)
+    envelope = WaveEnvelope()
+    beat = BeatDetector(sensitivity=1.3)
     screen = Screen()
     pal_idx = PALETTE_ORDER.index(palette_name) if palette_name in PALETTE_ORDER else 0
 
     engine.start()
     quit_session = False
     skip = False
-    mirror = False
-    show_scope = False
     show_help = False
     frame_dt = 1.0 / fps
-    scope_rows = 3
+    # A per-column loudness history that scrolls left one column per frame, so
+    # the newest audio enters at the right edge and beats roll across as bumps.
+    history = np.zeros(1)
 
     with _raw_terminal():
         while not engine.finished and not skip and not quit_session:
             frame_start = time.time()
             width, rows = screen.size()
+            if history.size != width:
+                history = _resample(history, width)
 
-            window = engine.latest_window(2048)
-            norm = gain(compute_bands(window, engine.samplerate, edges))
-            level = smoother.update(norm)
+            amp = envelope.update(engine.latest_window(1024))
+            is_beat = beat.update(amp)
+            history = np.roll(history, -1)
+            history[-1] = amp
 
             # --- input: keys, arrows -----------------------------------
             for event in parse_input(_read_pending()):
@@ -359,16 +372,9 @@ def run(engine, title, palette_name="trap", n_bins=72, fps=30):
                         skip = True
                     elif k == "g":
                         pal_idx = (pal_idx + 1) % len(PALETTE_ORDER)
-                    elif k == "m":
-                        mirror = not mirror
-                    elif k == "w":
-                        show_scope = not show_scope
                     elif k == "h":
                         show_help = not show_help
 
-            display = level
-            cap = peaks.update(display)
-            is_beat = beat.update(float(norm[: n_bins // 6].mean()))
             palette = PALETTES[PALETTE_ORDER[pal_idx]]
 
             # --- compose the frame -------------------------------------
@@ -376,13 +382,10 @@ def run(engine, title, palette_name="trap", n_bins=72, fps=30):
             if show_help:
                 body = help_frame(width, body_rows, palette)
             else:
-                spec_rows = body_rows - (scope_rows if show_scope else 0)
-                body = compose_frame(
-                    display, cap, width, spec_rows, palette,
-                    beat=1.0 if is_beat else 0.0, mirror=mirror,
+                body = compose_wave(
+                    history, width, body_rows, palette,
+                    beat=1.0 if is_beat else 0.0,
                 )
-                if show_scope:
-                    body += braille_waveform(window, width, scope_rows, gain=3.0)
 
             frame = (
                 [_header(title, engine.position_seconds, engine.duration_seconds,

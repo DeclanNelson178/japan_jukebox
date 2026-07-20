@@ -1,25 +1,28 @@
 # japan_jukebox
 
 A terminal music visualizer. Plays *Trappin in Japan* (or any local wav library)
-and paints a live, truecolor spectrum that jumps with the beat.
+and paints a live, truecolor waveform that flows and swells with the beat.
 
 ```
-        ▃   ▇  ▆▃▄▅▂  █
-  ▆     █  ▇█ ▁█████▄▆█▅   ▔   ▇█
-  █ ▂   █▔ ██ ██████████▅▁▆█▆▆▇██▆ ▃▅▆▇
-  █ █   ██ ██ ████████████████████▃████▄▂█▆
+  ▂▃▃▃▂▂▃▂▁▂▁█▇▄···················▇████▆▅▂▂▂▂
+  ███████████████▇▂··············▂▃▇██████████
+ ─────────────────────────────────────────────  ← zero axis
+  ███████████████▔··············▔▀██████████████
+  ▂▃▃▃▂▂▃▂▁▂▁█▇▄···················▇████▆▅▂▂▂▂
 ```
 
 ## How it works
 
 - **Real-time engine** (`engine.py`) streams audio and exposes a synchronized
-  tap of the samples currently hitting the speakers — the visuals are FFT'd from
-  exactly what you hear, so there's no wall-clock drift.
-- **Spectral analysis** (`spectrum.py`) maps each window onto log-spaced
-  (mel-like) bands, with fast-attack/slow-decay smoothing, floating peak caps,
-  and kick-drum beat detection.
-- **Renderer** (`render.py` + `visualizer.py`) draws a bottom-anchored spectrum
-  with sub-cell block glyphs, 24-bit gradient color, and a beat pulse.
+  tap of the samples currently hitting the speakers — the visuals track exactly
+  what you hear, so there's no wall-clock drift.
+- **Wave envelope** (`WaveEnvelope` in `visualizer.py`) turns each window into a
+  smoothed, auto-normalized loudness. A scrolling history pushes the newest value
+  in at the right edge, so beats roll across the screen as bumps.
+- **Renderer** (`render.py` + `visualizer.py`) draws that history as a filled
+  envelope mirrored around a center zero axis — solid at the axis, tapering to
+  sub-cell block tips — with 24-bit gradient color and a beat pulse. Each frame
+  is presented atomically (synchronized-update mode) so it never tears.
 
 Requires a truecolor terminal (iTerm2, Ghostty, Kitty, WezTerm).
 
@@ -46,8 +49,6 @@ python3 driver.py
 | `→` / `n` | skip song |
 | `↑` / `↓` | volume |
 | `g` | cycle palette (trap · aurora · ice · sunset) |
-| `m` | toggle mirror mode (bars radiate from a center line) |
-| `w` | toggle the braille oscilloscope strip |
 | `q` | quit |
 
 ## Command-line options
