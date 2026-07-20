@@ -37,6 +37,18 @@ def test_compute_bands_lights_up_band_containing_tone():
     assert edges[peak] <= 440 < edges[peak + 1]
 
 
+def test_compute_bands_fills_bands_narrower_than_bin_spacing():
+    # 8192 @ 44.1k => ~5.4 Hz bins; many 40-120 Hz log bands are narrower than
+    # that and contain no bin. They must be interpolated, not left dead at 0.
+    sr = 44100
+    n = 8192
+    t = np.arange(n) / sr
+    sig = np.sin(2 * np.pi * 60 * t).astype(np.float32)
+    edges = log_band_edges(40, 40, 120)
+    bands = compute_bands(sig, sr, edges)
+    assert not np.any(bands == 0.0)
+
+
 def test_to_display_zeros_stay_zero():
     # silence must read as empty bars, not floor noise blown up to full height
     out = to_display(np.zeros(4), n=8192)

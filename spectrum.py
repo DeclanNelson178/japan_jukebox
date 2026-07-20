@@ -20,17 +20,26 @@ def log_band_edges(n_bins, fmin, fmax):
 
 
 def compute_bands(window, samplerate, edges):
-    """Magnitude in each log-spaced band for a window of samples."""
+    """Magnitude in each log-spaced band for a window of samples.
+
+    Bands wide enough to contain FFT bins take the mean of those bins. Bands
+    narrower than the bin spacing (common in the bass, where log spacing packs
+    many bands into a few Hz) contain no bin, so they're interpolated from the
+    spectrum at the band's center frequency instead of being left dead at 0.
+    """
     n = len(window)
     windowed = window * np.hanning(n)
     spectrum = np.abs(np.fft.rfft(windowed))
     freqs = np.fft.rfftfreq(n, 1.0 / samplerate)
+    centers = np.sqrt(edges[:-1] * edges[1:])  # geometric center of each band
 
     bands = np.zeros(len(edges) - 1, dtype=np.float32)
     for i in range(len(edges) - 1):
         mask = (freqs >= edges[i]) & (freqs < edges[i + 1])
         if mask.any():
             bands[i] = spectrum[mask].mean()
+        else:
+            bands[i] = np.interp(centers[i], freqs, spectrum)
     return bands
 
 
