@@ -156,7 +156,6 @@ _HELP_ROWS = [
     ("g", "cycle color palette"),
     ("m", "toggle mirror mode"),
     ("w", "toggle waveform scope"),
-    ("mouse", "ripple the bars"),
     ("h", "toggle this help"),
     ("q", "quit"),
 ]
@@ -213,19 +212,6 @@ def parse_input(buf):
             events.append(("key", buf[i]))
             i += 1
     return events
-
-
-def decay_ripple(ripple, factor=0.85):
-    """Fade a ripple field toward zero (call once per frame)."""
-    return np.asarray(ripple, dtype=float) * factor
-
-
-def add_ripple(ripple, idx, strength=0.9, sigma=3.0):
-    """Add a gaussian bump centered on band `idx` (a mouse hit)."""
-    ripple = np.asarray(ripple, dtype=float)
-    x = np.arange(len(ripple))
-    bump = strength * np.exp(-0.5 * ((x - idx) / sigma) ** 2)
-    return ripple + bump
 
 
 # --------------------------------------------------------------------------
@@ -291,14 +277,14 @@ def _raw_terminal():
     old = termios.tcgetattr(fd)
     try:
         tty.setraw(fd)
-        # hide cursor, clear, enable SGR any-motion mouse reporting
-        sys.stdout.write("\x1b[?25l\x1b[2J\x1b[?1003h\x1b[?1006h")
+        # hide cursor, clear
+        sys.stdout.write("\x1b[?25l\x1b[2J")
         sys.stdout.flush()
         yield
     finally:
         termios.tcsetattr(fd, termios.TCSADRAIN, old)
-        # disable mouse, show cursor, reset, clear
-        sys.stdout.write("\x1b[?1003l\x1b[?1006l\x1b[?25h\x1b[0m\x1b[2J\x1b[H")
+        # show cursor, reset, clear
+        sys.stdout.write("\x1b[?25h\x1b[0m\x1b[2J\x1b[H")
         sys.stdout.flush()
 
 
@@ -340,7 +326,6 @@ def run(engine, title, palette_name="trap", n_bins=72, fps=30):
     mirror = False
     show_scope = False
     show_help = False
-    ripple = np.zeros(n_bins)
     frame_dt = 1.0 / fps
     scope_rows = 3
 
@@ -353,15 +338,10 @@ def run(engine, title, palette_name="trap", n_bins=72, fps=30):
             norm = gain(compute_bands(window, engine.samplerate, edges))
             level = smoother.update(norm)
 
-            # --- input: keys, arrows, mouse-driven ripple --------------
-            ripple = decay_ripple(ripple, 0.82)
+            # --- input: keys, arrows -----------------------------------
             for event in parse_input(_read_pending()):
                 kind = event[0]
-                if kind == "mouse":
-                    _, mx, _my = event
-                    band = int((mx - 1) / max(1, width) * n_bins)
-                    ripple = add_ripple(ripple, band, strength=0.8, sigma=n_bins / 24)
-                elif kind == "arrow":
+                if kind == "arrow":
                     a = event[1]
                     if a == "A":
                         engine.nudge_volume(0.05)
@@ -386,7 +366,7 @@ def run(engine, title, palette_name="trap", n_bins=72, fps=30):
                     elif k == "h":
                         show_help = not show_help
 
-            display = np.clip(level + ripple, 0.0, 1.0)
+            display = level
             cap = peaks.update(display)
             is_beat = beat.update(float(norm[: n_bins // 6].mean()))
             palette = PALETTES[PALETTE_ORDER[pal_idx]]

@@ -48,11 +48,7 @@ python3 driver.py
 | `g` | cycle palette (trap · aurora · ice · sunset) |
 | `m` | toggle mirror mode (bars radiate from a center line) |
 | `w` | toggle the braille oscilloscope strip |
-| mouse | ripple the bars — they surge up under the cursor |
 | `q` | quit |
-
-Moving the mouse over the visualizer sends motion events, so text selection
-needs Option-drag while it's running.
 
 ## Command-line options
 

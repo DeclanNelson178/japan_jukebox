@@ -7,9 +7,7 @@ import threading
 
 from visualizer import (
     PALETTES,
-    add_ripple,
     compose_frame,
-    decay_ripple,
     help_frame,
     parse_input,
     _read_pending,
@@ -124,21 +122,6 @@ def test_parse_input_sgr_mouse():
 def test_parse_input_mixed_stream():
     evts = parse_input("g\x1b[<35;10;3Mq")
     assert evts == [("key", "g"), ("mouse", 10, 3), ("key", "q")]
-
-
-# --- mouse ripple ---------------------------------------------------------
-
-def test_decay_ripple_shrinks():
-    r = np.array([1.0, 1.0])
-    out = decay_ripple(r, 0.5)
-    assert np.allclose(out, [0.5, 0.5])
-
-
-def test_add_ripple_peaks_at_center():
-    r = np.zeros(11)
-    out = add_ripple(r, idx=5, strength=1.0, sigma=1.5)
-    assert np.argmax(out) == 5
-    assert out[5] > out[0]
 
 
 def test_read_pending_returns_available_without_blocking():
