@@ -7,8 +7,17 @@ thin layer on top.
 Requires a 24-bit-color terminal (iTerm2, Ghostty, Kitty, WezTerm, ...).
 """
 
+import numpy as np
+
 # Sub-cell vertical block ramp: index 0 (empty) .. 8 (full cell).
 BLOCKS = " ▁▂▃▄▅▆▇█"
+
+# Braille dot bit values, indexed [column 0..1][row 0..3]. A braille cell packs
+# a 2x4 dot grid, giving 8x the resolution of a normal character cell.
+BRAILLE_DOTS = (
+    (0x01, 0x02, 0x04, 0x40),
+    (0x08, 0x10, 0x20, 0x80),
+)
 
 RESET = "\x1b[0m"
 HIDE_CURSOR = "\x1b[?25l"
@@ -70,3 +79,28 @@ def sample_gradient(stops, t):
             local = (t - p0) / (p1 - p0) if p1 > p0 else 0.0
             return lerp_color(c0, c1, local)
     return tuple(stops[-1][1])
+
+
+def braille_waveform(samples, width, rows, gain=1.0):
+    """Draw a waveform as braille dots: `rows` strings of `width` cells each.
+
+    The samples (expected in ~[-1, 1]) are drawn as a single dot per horizontal
+    dot-column around the vertical middle, at 8x the character-cell resolution.
+    """
+    samples = np.asarray(samples, dtype=float)
+    dot_cols = width * 2
+    dot_rows = rows * 4
+    xs = np.linspace(0, len(samples) - 1, dot_cols)
+    ys = np.interp(xs, np.arange(len(samples)), samples)
+    mid = (dot_rows - 1) / 2.0
+
+    grid = [[0] * width for _ in range(rows)]
+    for i in range(dot_cols):
+        val = max(-1.0, min(1.0, ys[i] * gain))
+        dot_y = int(round(mid - val * mid))
+        dot_y = max(0, min(dot_rows - 1, dot_y))
+        cell_col, sub_col = divmod(i, 2)
+        cell_row, sub_row = divmod(dot_y, 4)
+        grid[cell_row][cell_col] |= BRAILLE_DOTS[sub_col][sub_row]
+
+    return ["".join(chr(0x2800 + bits) for bits in row) for row in grid]

@@ -1,6 +1,15 @@
 import re
 
-from visualizer import PALETTES, compose_frame
+import numpy as np
+
+from visualizer import (
+    PALETTES,
+    add_ripple,
+    compose_frame,
+    decay_ripple,
+    help_frame,
+    parse_input,
+)
 
 ANSI = re.compile(r"\x1b\[[0-9;?]*[a-zA-Z]")
 
@@ -44,3 +53,85 @@ def test_resamples_when_bands_shorter_than_width():
     lines = compose_frame([1.0, 1.0], [1.0, 1.0], width=20, height=4, palette=pal)
     for line in lines:
         assert len(visible(line)) == 20
+
+
+# --- mirror mode ----------------------------------------------------------
+
+def test_mirror_frame_dimensions():
+    pal = PALETTES["trap"]
+    lines = compose_frame([0.5] * 8, [0.5] * 8, 8, 10, pal, mirror=True)
+    assert len(lines) == 10
+    for line in lines:
+        assert len(visible(line)) == 8
+
+
+def test_mirror_full_values_fill_top_and_bottom():
+    pal = PALETTES["trap"]
+    lines = compose_frame([1.0] * 6, [1.0] * 6, 6, 8, pal, mirror=True)
+    assert visible(lines[0]) == "█" * 6    # topmost row lit
+    assert visible(lines[-1]) == "█" * 6   # bottommost row lit
+
+
+def test_mirror_zero_values_blank():
+    pal = PALETTES["trap"]
+    lines = compose_frame([0.0] * 6, [0.0] * 6, 6, 8, pal, mirror=True)
+    for line in lines:
+        assert visible(line).strip() == ""
+
+
+def test_mirror_energy_radiates_from_center():
+    pal = PALETTES["trap"]
+    # a small value should light rows near the center, not the edges
+    lines = compose_frame([0.25] * 6, [0.0] * 6, 6, 8, pal, mirror=True)
+    assert visible(lines[0]).strip() == ""    # top edge empty
+    assert visible(lines[-1]).strip() == ""   # bottom edge empty
+    mid = "".join(visible(l) for l in lines[3:5])
+    assert mid.strip() != ""                   # center lit
+
+
+# --- help overlay ---------------------------------------------------------
+
+def test_help_frame_dimensions_and_content():
+    lines = help_frame(60, 20, PALETTES["trap"])
+    assert len(lines) == 20
+    for line in lines:
+        assert len(visible(line)) == 60
+    blob = " ".join(visible(l) for l in lines).lower()
+    assert "quit" in blob and "pause" in blob and "palette" in blob
+
+
+# --- input parsing --------------------------------------------------------
+
+def test_parse_input_plain_keys():
+    assert parse_input("q") == [("key", "q")]
+    assert parse_input(" g") == [("key", " "), ("key", "g")]
+
+
+def test_parse_input_arrows():
+    assert parse_input("\x1b[A") == [("arrow", "A")]
+    assert parse_input("\x1b[B\x1b[C") == [("arrow", "B"), ("arrow", "C")]
+
+
+def test_parse_input_sgr_mouse():
+    # ESC [ < button ; x ; y M   (motion at column 42, row 7)
+    assert parse_input("\x1b[<35;42;7M") == [("mouse", 42, 7)]
+
+
+def test_parse_input_mixed_stream():
+    evts = parse_input("g\x1b[<35;10;3Mq")
+    assert evts == [("key", "g"), ("mouse", 10, 3), ("key", "q")]
+
+
+# --- mouse ripple ---------------------------------------------------------
+
+def test_decay_ripple_shrinks():
+    r = np.array([1.0, 1.0])
+    out = decay_ripple(r, 0.5)
+    assert np.allclose(out, [0.5, 0.5])
+
+
+def test_add_ripple_peaks_at_center():
+    r = np.zeros(11)
+    out = add_ripple(r, idx=5, strength=1.0, sigma=1.5)
+    assert np.argmax(out) == 5
+    assert out[5] > out[0]

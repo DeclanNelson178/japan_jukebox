@@ -1,6 +1,9 @@
+import numpy as np
+
 from render import (
     BLOCKS,
     RESET,
+    braille_waveform,
     column_glyphs,
     lerp_color,
     level_to_block,
@@ -60,3 +63,28 @@ def test_sample_gradient_multi_stop_picks_right_segment():
     stops = [(0.0, (0, 0, 0)), (0.5, (100, 0, 0)), (1.0, (100, 100, 0))]
     # 0.75 is halfway through the second segment
     assert sample_gradient(stops, 0.75) == (100, 50, 0)
+
+
+def test_braille_waveform_dimensions():
+    samples = np.zeros(64, dtype=np.float32)
+    rows = braille_waveform(samples, width=20, rows=3)
+    assert len(rows) == 3
+    for row in rows:
+        assert len(row) == 20
+
+
+def test_braille_waveform_all_chars_are_braille():
+    samples = np.sin(np.linspace(0, 6.28, 128)).astype(np.float32)
+    rows = braille_waveform(samples, width=16, rows=4)
+    for row in rows:
+        for ch in row:
+            assert 0x2800 <= ord(ch) <= 0x28FF
+
+
+def test_braille_waveform_flat_signal_lives_on_center_row():
+    samples = np.zeros(64, dtype=np.float32)
+    rows = braille_waveform(samples, width=12, rows=4)
+    # a flat zero signal draws along the vertical middle, not the edges
+    assert rows[0] == " " * 12 or all(ord(c) == 0x2800 for c in rows[0])
+    middle_has_dots = any(ord(c) != 0x2800 for c in rows[1] + rows[2])
+    assert middle_has_dots
