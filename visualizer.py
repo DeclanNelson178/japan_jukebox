@@ -20,6 +20,7 @@ from render import (
     RESET,
     braille_waveform,
     column_glyphs,
+    frame_payload,
     sample_gradient,
     truecolor_fg,
 )
@@ -94,6 +95,9 @@ def compose_frame(values, peaks, width, height, palette, beat=0.0, mirror=False)
     vals = _resample(values, width)
     pks = _resample(peaks, width)
     cols = [column_glyphs(v, height) for v in vals]
+    # The gradient color depends only on the column, so sample it once per
+    # column instead of once per cell (height x cheaper in the hot loop).
+    col_base = [sample_gradient(palette, x / max(1, width - 1)) for x in range(width)]
     boost = min(0.6, 0.6 * beat)
 
     lines = []
@@ -109,9 +113,8 @@ def compose_frame(values, peaks, width, height, palette, beat=0.0, mirror=False)
                 else:
                     parts.append(" ")
                 continue
-            base = sample_gradient(palette, x / max(1, width - 1))
             lift = row / height
-            parts.append(truecolor_fg(_brighten(base, 1.0 + 0.4 * lift + boost)) + glyph)
+            parts.append(truecolor_fg(_brighten(col_base[x], 1.0 + 0.4 * lift + boost)) + glyph)
         lines.append("".join(parts) + RESET)
     return lines
 
@@ -277,11 +280,8 @@ class Screen:
         return cols, rows
 
     def draw(self, lines):
-        # Home the cursor and repaint. Clear each line to EOL to avoid ghosts,
-        # and join with newlines *between* lines only — a trailing newline on
-        # the bottom row would scroll the whole frame up every repaint.
-        body = "\x1b[K\n".join(lines)
-        sys.stdout.write("\x1b[H" + body + "\x1b[K\x1b[J")
+        # One synchronized, atomic repaint — see render.frame_payload.
+        sys.stdout.write(frame_payload(lines))
         sys.stdout.flush()
 
 
@@ -323,7 +323,7 @@ def _read_pending(fd=None):
     return b"".join(chunks).decode("utf-8", "ignore")
 
 
-def run(engine, title, palette_name="trap", n_bins=72, fps=60):
+def run(engine, title, palette_name="trap", n_bins=72, fps=30):
     """Play `engine` and paint the spectrum until the song ends or the user
     quits/skips. Returns True if the user asked to quit the whole session."""
     edges = log_band_edges(n_bins, 40, 16000)

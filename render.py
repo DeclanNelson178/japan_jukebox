@@ -23,6 +23,25 @@ RESET = "\x1b[0m"
 HIDE_CURSOR = "\x1b[?25l"
 SHOW_CURSOR = "\x1b[?25h"
 CLEAR = "\x1b[2J\x1b[H"
+HOME = "\x1b[H"
+
+# Synchronized-update (DEC private mode 2026): the terminal buffers everything
+# between BSU and ESU and presents it in a single atomic frame. Without it a
+# large repaint is shown as it streams in, which reads as tearing / flicker.
+SYNC_START = "\x1b[?2026h"
+SYNC_END = "\x1b[?2026l"
+
+
+def frame_payload(lines):
+    """One atomic screen repaint from a list of full-width lines.
+
+    Homes the cursor and overwrites in place (no screen clear, which would
+    flash). Each line is cleared to end-of-line to erase any ghost, and the
+    tail of the screen is cleared for shorter frames. No trailing newline —
+    that would scroll the whole frame up on every repaint.
+    """
+    body = "\x1b[K\n".join(lines)
+    return SYNC_START + HOME + body + "\x1b[K\x1b[J" + SYNC_END
 
 
 def level_to_block(fraction):

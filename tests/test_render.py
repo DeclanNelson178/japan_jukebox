@@ -5,11 +5,24 @@ from render import (
     RESET,
     braille_waveform,
     column_glyphs,
+    frame_payload,
     lerp_color,
     level_to_block,
     sample_gradient,
     truecolor_fg,
 )
+
+
+def test_frame_payload_is_synchronized_and_homed():
+    """The anti-flicker contract: one atomic present per frame. The terminal
+    must be told to buffer the whole repaint (mode 2026) and the cursor homed,
+    with no trailing newline that would scroll the frame up."""
+    out = frame_payload(["ab", "cd"])
+    assert out.startswith("\x1b[?2026h")   # begin synchronized update
+    assert out.endswith("\x1b[?2026l")     # end synchronized update
+    assert "\x1b[H" in out                 # cursor homed, not cleared
+    assert "ab" in out and "cd" in out
+    assert "\n\x1b[?2026l" not in out      # no trailing newline before present
 
 
 def test_level_to_block_boundaries():
