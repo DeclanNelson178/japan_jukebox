@@ -72,6 +72,17 @@ def column_glyphs(value, rows):
     return cells
 
 
+def spectrum_frame(values, rows):
+    """Bottom-anchored bar spectrum: `rows` strings, top-to-bottom.
+
+    `values` is one fractional height in [0, 1] per column. Each column is a
+    stack of sub-cell blocks (see `column_glyphs`); the returned lines read from
+    the top of the display down, so the last line is the baseline.
+    """
+    cols = [column_glyphs(v, rows) for v in values]  # each bottom-up, len == rows
+    return ["".join(col[r] for col in cols) for r in range(rows - 1, -1, -1)]
+
+
 def truecolor_fg(rgb):
     """24-bit foreground color escape for an (r, g, b) tuple."""
     r, g, b = rgb

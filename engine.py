@@ -37,7 +37,7 @@ def to_mono(samples):
 class AudioEngine:
     """Streams a mono float32 signal and tracks a rolling window for analysis."""
 
-    def __init__(self, signal, samplerate, blocksize=1024, tap_size=4096):
+    def __init__(self, signal, samplerate, blocksize=1024, tap_size=8192):
         self._signal = np.asarray(signal, dtype=np.float32)
         self.samplerate = int(samplerate)
         self.blocksize = int(blocksize)

@@ -17,7 +17,16 @@ import termios
 import time
 import tty
 
-from render import RESET, frame_payload, sample_gradient, truecolor_fg
+from render import RESET, frame_payload, sample_gradient, spectrum_frame, truecolor_fg
+from spectrum import compute_bands, log_band_edges, to_display
+
+# V1 spectrum tuning (see VISUALIZER_PLAN.md). A large window is required to
+# resolve real bass; RAW_GAIN is the eyeball knob for overall bar height until
+# autosens lands.
+FFT_WINDOW = 8192
+FMIN = 40.0
+FMAX = 16000.0
+RAW_GAIN = 20.0
 
 # Header accent gradients (kept from the old visual; only the header uses them
 # in V0, but the palette machinery returns in the polish phase).
@@ -125,6 +134,16 @@ def _idle_body(paused, width, height, palette):
     return lines
 
 
+def _spectrum_body(engine, width, height):
+    """The V1 body: raw log-spaced spectrum bars, one band per column."""
+    n_bands = max(1, width)
+    edges = log_band_edges(n_bands, FMIN, min(FMAX, engine.samplerate / 2.0))
+    window = engine.latest_window(FFT_WINDOW)
+    bands = compute_bands(window, engine.samplerate, edges)
+    disp = to_display(bands, FFT_WINDOW, gain=RAW_GAIN)
+    return spectrum_frame(disp, height)
+
+
 class Screen:
     def size(self):
         cols, rows = os.get_terminal_size()
@@ -215,7 +234,7 @@ def run(engine, title, palette_name="trap", fps=30):
             frame = (
                 [_header(title, engine.position_seconds, engine.duration_seconds,
                          width, palette)]
-                + _idle_body(engine.paused, width, body_rows, palette)
+                + _spectrum_body(engine, width, body_rows)
                 + [_footer(width, PALETTE_ORDER[pal_idx])]
             )
             screen.draw(frame)

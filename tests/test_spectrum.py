@@ -6,6 +6,7 @@ from spectrum import (
     Smoother,
     compute_bands,
     log_band_edges,
+    to_display,
 )
 
 
@@ -34,6 +35,28 @@ def test_compute_bands_lights_up_band_containing_tone():
 
     peak = int(np.argmax(bands))
     assert edges[peak] <= 440 < edges[peak + 1]
+
+
+def test_to_display_zeros_stay_zero():
+    # silence must read as empty bars, not floor noise blown up to full height
+    out = to_display(np.zeros(4), n=8192)
+    assert np.allclose(out, 0.0)
+
+
+def test_to_display_monotonic_and_clipped():
+    bands = np.array([0.0, 1.0, 10.0, 1e6])
+    out = to_display(bands, n=8192, gain=20.0)
+    assert np.all(np.diff(out) >= 0)     # louder band => taller bar
+    assert out[0] == 0.0
+    assert np.isclose(out[-1], 1.0)      # a huge magnitude saturates at full
+
+
+def test_to_display_curve_boosts_quiet_bands():
+    # the sub-linear curve lifts a quiet band so it stays visible
+    bands = np.array([1.0])
+    linear = to_display(bands, n=8192, gain=1.0, curve=1.0)
+    boosted = to_display(bands, n=8192, gain=1.0, curve=0.5)
+    assert boosted[0] > linear[0]
 
 
 def test_smoother_attack_then_decay():

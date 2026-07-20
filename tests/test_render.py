@@ -9,6 +9,7 @@ from render import (
     lerp_color,
     level_to_block,
     sample_gradient,
+    spectrum_frame,
     truecolor_fg,
 )
 
@@ -76,6 +77,27 @@ def test_sample_gradient_multi_stop_picks_right_segment():
     stops = [(0.0, (0, 0, 0)), (0.5, (100, 0, 0)), (1.0, (100, 100, 0))]
     # 0.75 is halfway through the second segment
     assert sample_gradient(stops, 0.75) == (100, 50, 0)
+
+
+def test_spectrum_frame_dimensions():
+    lines = spectrum_frame([0.0, 0.5, 1.0], rows=4)
+    assert len(lines) == 4
+    for line in lines:
+        assert len(line) == 3
+
+
+def test_spectrum_frame_bottom_anchored():
+    # a full column shows a block on every row; an empty column stays blank
+    lines = spectrum_frame([1.0, 0.0], rows=3)
+    for line in lines:
+        assert line[0] == "█"
+        assert line[1] == " "
+
+
+def test_spectrum_frame_partial_column_grows_from_the_bottom():
+    lines = spectrum_frame([0.5], rows=4)  # half height => bottom two rows
+    assert lines[-1] == "█" and lines[-2] == "█"
+    assert lines[0] == " " and lines[1] == " "
 
 
 def test_braille_waveform_dimensions():

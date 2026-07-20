@@ -34,6 +34,18 @@ def compute_bands(window, samplerate, edges):
     return bands
 
 
+def to_display(bands, n, gain=20.0, curve=0.5):
+    """Map raw band magnitudes to display heights in [0, 1] — no smoothing.
+
+    Normalizing by the FFT size `n` makes the scale independent of the window
+    length. The sub-linear `curve` (sqrt by default) lifts quiet bands so they
+    stay visible without blowing silence up to full height. This is the raw V1
+    mapping; autosens replaces the fixed `gain` in a later phase.
+    """
+    x = np.maximum(np.asarray(bands, dtype=np.float32), 0.0) / n * gain
+    return np.clip(x ** curve, 0.0, 1.0)
+
+
 class Smoother:
     """Per-band exponential smoothing: snappy on the way up, graceful down."""
 
