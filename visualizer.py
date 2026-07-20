@@ -1,8 +1,11 @@
-"""The visualizer: turns live audio into a mirrored... no — a bottom-anchored
-truecolor spectrum with floating peak caps, gradient color, and beat pulse.
+"""Playback shell — V0 of the visualizer rebuild (see VISUALIZER_PLAN.md).
 
-`compose_frame` is pure and unit tested. Everything below the PALETTES/compose
-line does terminal + keyboard I/O and is exercised live rather than in tests.
+Right now this only plays audio and draws a now-playing header, a play/pause
+body, and a controls footer. All the spectrum DSP and composition was stripped
+out; it comes back one vetted phase at a time (V1: raw log spectrum, ...).
+
+The pure input parsing (`parse_input`) is unit tested. Everything that touches
+the real terminal or audio hardware is exercised live rather than in tests.
 """
 
 import contextlib
@@ -14,18 +17,10 @@ import termios
 import time
 import tty
 
-import numpy as np
+from render import RESET, frame_payload, sample_gradient, truecolor_fg
 
-from render import (
-    RESET,
-    column_glyphs,
-    frame_payload,
-    sample_gradient,
-    truecolor_fg,
-)
-from spectrum import BeatDetector
-
-# Frequency-swept gradients (position 0 = bass/left .. 1 = treble/right).
+# Header accent gradients (kept from the old visual; only the header uses them
+# in V0, but the palette machinery returns in the polish phase).
 PALETTES = {
     "trap": [
         (0.0, (123, 31, 162)),   # deep purple
@@ -53,139 +48,10 @@ PALETTES = {
 }
 PALETTE_ORDER = ["trap", "aurora", "ice", "sunset"]
 
-CAP_GLYPH = "▔"
 
-# Vertical flip of the lower-block ramp for the bottom half of the mirror.
-# Unicode has no full upper-block ramp, so these are nearest approximations.
-_FLIP = {
-    " ": " ", "▁": "▔", "▂": "▔", "▃": "▀", "▄": "▀",
-    "▅": "▀", "▆": "█", "▇": "█", "█": "█",
-}
-
-
-def _resample(values, width):
-    values = np.asarray(values, dtype=float)
-    if len(values) == width:
-        return values
-    xs = np.linspace(0, len(values) - 1, width)
-    return np.interp(xs, np.arange(len(values)), values)
-
-
-def _brighten(rgb, factor):
-    return tuple(min(255, int(c * factor)) for c in rgb)
-
-
-def compose_frame(values, peaks, width, height, palette, beat=0.0, mirror=False):
-    """Render a spectrum frame as a list of ANSI lines.
-
-    `values`/`peaks` are per-band levels in [0, 1] (resampled to `width`).
-    `mirror` radiates bars symmetrically from a horizontal center line.
-    Returns exactly `height` strings, each `width` cells wide.
-    """
-    if mirror:
-        return compose_wave(values, width, height, palette, beat)
-
-    vals = _resample(values, width)
-    pks = _resample(peaks, width)
-    cols = [column_glyphs(v, height) for v in vals]
-    # The gradient color depends only on the column, so sample it once per
-    # column instead of once per cell (height x cheaper in the hot loop).
-    col_base = [sample_gradient(palette, x / max(1, width - 1)) for x in range(width)]
-    boost = min(0.6, 0.6 * beat)
-
-    lines = []
-    for top in range(height):
-        row = height - 1 - top  # cell index counting up from the bottom
-        parts = []
-        for x in range(width):
-            glyph = cols[x][row]
-            if glyph == " ":
-                peak_cell = min(height - 1, int(pks[x] * height))
-                if pks[x] > 0.02 and peak_cell == row:
-                    parts.append(truecolor_fg((235, 235, 245)) + CAP_GLYPH)
-                else:
-                    parts.append(" ")
-                continue
-            lift = row / height
-            parts.append(truecolor_fg(_brighten(col_base[x], 1.0 + 0.4 * lift + boost)) + glyph)
-        lines.append("".join(parts) + RESET)
-    return lines
-
-
-def compose_wave(values, width, height, palette, beat=0.0):
-    """Render a filled waveform envelope mirrored around a center zero axis.
-
-    `values` are per-column half-amplitudes in [0, 1] (resampled to `width`).
-    Each column fills from the center line outward — solid at the axis,
-    tapering to partial-block tips — so a scrolling loudness envelope reads as
-    a symmetric wave that swells on the beat. Returns `height` strings.
-    """
-    vals = _resample(values, width)
-    top_h = height // 2
-    bot_h = height - top_h
-    # Each half grows from the center line outward.
-    top_cols = [column_glyphs(v, top_h) for v in vals]
-    bot_cols = [[_FLIP[g] for g in column_glyphs(v, bot_h)] for v in vals]
-    # Color depends only on the column; sample the gradient once per column.
-    col_base = [sample_gradient(palette, x / max(1, width - 1)) for x in range(width)]
-    boost = min(0.6, 0.6 * beat)
-
-    lines = []
-    for r in range(height):
-        in_top = r < top_h
-        # distance from center drives which cell of each half we're drawing
-        if in_top:
-            cell = top_h - 1 - r          # 0 at center, grows toward top edge
-            span = top_h
-        else:
-            cell = r - top_h              # 0 at center, grows toward bottom edge
-            span = bot_h
-        parts = []
-        for x in range(width):
-            glyph = top_cols[x][cell] if in_top else bot_cols[x][cell]
-            if glyph == " ":
-                parts.append(" ")
-                continue
-            lift = 1.0 - cell / max(1, span)   # brighter toward the center
-            parts.append(truecolor_fg(_brighten(col_base[x], 1.0 + 0.4 * lift + boost)) + glyph)
-        lines.append("".join(parts) + RESET)
-    return lines
-
-
-_HELP_ROWS = [
-    ("space", "pause / resume"),
-    ("→  n", "skip to next song"),
-    ("↑  ↓", "volume up / down"),
-    ("g", "cycle color palette"),
-    ("h", "toggle this help"),
-    ("q", "quit"),
-]
-
-
-def help_frame(width, height, palette):
-    """A full-screen, centered help panel; `height` lines of `width` cells."""
-    title = "J U K E B O X   —   C O N T R O L S"
-    body = [title, ""]
-    for key, desc in _HELP_ROWS:
-        body.append(f"{key:>7}   {desc}")
-    body.append("")
-
-    accent = truecolor_fg(sample_gradient(palette, 0.5))
-    dim = "\x1b[2m"
-    start = max(0, (height - len(body)) // 2)
-    lines = []
-    for r in range(height):
-        i = r - start
-        if 0 <= i < len(body):
-            text = body[i]
-            pad_l = (width - len(text)) // 2
-            pad_r = width - len(text) - pad_l
-            color = accent if i == 0 else dim
-            lines.append(" " * pad_l + color + text + RESET + " " * pad_r)
-        else:
-            lines.append(" " * width)
-    return lines
-
+# --------------------------------------------------------------------------
+# Input parsing (pure, unit tested)
+# --------------------------------------------------------------------------
 
 _MOUSE_RE = re.compile(r"\x1b\[<(\d+);(\d+);(\d+)([Mm])")
 _ARROWS = {"\x1b[A": "A", "\x1b[B": "B", "\x1b[C": "C", "\x1b[D": "D"}
@@ -219,37 +85,13 @@ def parse_input(buf):
 # Live I/O shell (not unit tested — needs a real terminal + audio).
 # --------------------------------------------------------------------------
 
-class WaveEnvelope:
-    """Turn a window of samples into one smoothed, auto-normalized loudness in
-    [0, 1] — the half-amplitude of a single new wave column.
-
-    RMS gives a stable loudness (louder = taller wave). A slowly decaying
-    running peak normalizes it so quiet and loud sections both fill the axis.
-    Fast attack lets beats punch through; slower release lets the wave settle
-    smoothly instead of flickering.
-    """
-
-    def __init__(self, attack=0.65, release=0.18, decay=0.9990, floor=1e-4):
-        self.attack = attack
-        self.release = release
-        self.decay = decay
-        self.floor = floor
-        self.peak = floor
-        self.value = 0.0
-
-    def update(self, window):
-        window = np.asarray(window, dtype=float)
-        rms = float(np.sqrt(np.mean(window ** 2))) if window.size else 0.0
-        self.peak = max(self.peak * self.decay, rms, self.floor)
-        target = min(1.0, rms / self.peak)
-        coef = self.attack if target > self.value else self.release
-        self.value += (target - self.value) * coef
-        return self.value
-
-
 def _fmt_time(seconds):
     seconds = max(0, int(seconds))
     return f"{seconds // 60}:{seconds % 60:02d}"
+
+
+def _visible(s):
+    return re.sub(r"\x1b\[[0-9;?]*[a-zA-Z]", "", s)
 
 
 def _header(title, pos, dur, width, palette):
@@ -259,18 +101,28 @@ def _header(title, pos, dur, width, palette):
     bar_w = max(4, width - len(_visible(left)) - len(right) - 3)
     filled = int(bar_w * (pos / dur)) if dur else 0
     bar = "━" * filled + "╸" + "─" * max(0, bar_w - filled - 1)
-    line = f"{color}{left}{RESET} {bar} {right}"
-    return line
+    return f"{color}{left}{RESET} {bar} {right}"
 
 
 def _footer(width, palette_name):
-    keys = "h help · space pause · → skip · ↑↓ vol · g palette · q quit"
+    keys = "space pause · → skip · ↑↓ vol · g palette · q quit"
     return f"\x1b[2m{keys}   [{palette_name}]{RESET}"
 
 
-def _visible(s):
-    import re
-    return re.sub(r"\x1b\[[0-9;?]*[a-zA-Z]", "", s)
+def _idle_body(paused, width, height, palette):
+    """The body area for V0: a centered play/pause indicator on blank rows."""
+    state = "⏸  paused" if paused else "▶  playing"
+    color = truecolor_fg(sample_gradient(palette, 0.5))
+    mid = height // 2
+    lines = []
+    for r in range(height):
+        if r == mid:
+            pad = max(0, (width - len(state)) // 2)
+            tail = max(0, width - pad - len(state))
+            lines.append(" " * pad + color + state + RESET + " " * tail)
+        else:
+            lines.append(" " * width)
+    return lines
 
 
 class Screen:
@@ -323,38 +175,23 @@ def _read_pending(fd=None):
 
 
 def run(engine, title, palette_name="trap", fps=30):
-    """Play `engine` and paint the wave until the song ends or the user
+    """Play `engine` and draw the playback UI until the song ends or the user
     quits/skips. Returns True if the user asked to quit the whole session."""
-    envelope = WaveEnvelope()
-    beat = BeatDetector(sensitivity=1.3)
     screen = Screen()
     pal_idx = PALETTE_ORDER.index(palette_name) if palette_name in PALETTE_ORDER else 0
 
     engine.start()
     quit_session = False
     skip = False
-    show_help = False
     frame_dt = 1.0 / fps
-    # A per-column loudness history that scrolls left one column per frame, so
-    # the newest audio enters at the right edge and beats roll across as bumps.
-    history = np.zeros(1)
 
     with _raw_terminal():
         while not engine.finished and not skip and not quit_session:
             frame_start = time.time()
             width, rows = screen.size()
-            if history.size != width:
-                history = _resample(history, width)
 
-            amp = envelope.update(engine.latest_window(1024))
-            is_beat = beat.update(amp)
-            history = np.roll(history, -1)
-            history[-1] = amp
-
-            # --- input: keys, arrows -----------------------------------
             for event in parse_input(_read_pending()):
-                kind = event[0]
-                if kind == "arrow":
+                if event[0] == "arrow":
                     a = event[1]
                     if a == "A":
                         engine.nudge_volume(0.05)
@@ -362,7 +199,7 @@ def run(engine, title, palette_name="trap", fps=30):
                         engine.nudge_volume(-0.05)
                     elif a == "C":
                         skip = True
-                else:  # key
+                elif event[0] == "key":
                     k = event[1]
                     if k in ("q", "\x03"):
                         quit_session = True
@@ -372,25 +209,13 @@ def run(engine, title, palette_name="trap", fps=30):
                         skip = True
                     elif k == "g":
                         pal_idx = (pal_idx + 1) % len(PALETTE_ORDER)
-                    elif k == "h":
-                        show_help = not show_help
 
             palette = PALETTES[PALETTE_ORDER[pal_idx]]
-
-            # --- compose the frame -------------------------------------
-            body_rows = rows - 2
-            if show_help:
-                body = help_frame(width, body_rows, palette)
-            else:
-                body = compose_wave(
-                    history, width, body_rows, palette,
-                    beat=1.0 if is_beat else 0.0,
-                )
-
+            body_rows = max(1, rows - 2)
             frame = (
                 [_header(title, engine.position_seconds, engine.duration_seconds,
                          width, palette)]
-                + body
+                + _idle_body(engine.paused, width, body_rows, palette)
                 + [_footer(width, PALETTE_ORDER[pal_idx])]
             )
             screen.draw(frame)
