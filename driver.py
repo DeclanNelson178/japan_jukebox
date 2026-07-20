@@ -1,75 +1,74 @@
 import argparse
+import os
 import time
+from pathlib import Path
 
 import numpy as np
 from dotenv import load_dotenv
-from pathlib import Path
 
-from oscillating_line import oscillating_line
-from spectrogram import spectrogram
-
-# CLI ARGS
+from engine import AudioEngine, load_wav
 from utils import get_volumes, match_song, setup
-
+from visualizer import PALETTE_ORDER, run
 
 load_dotenv()
-env_path = Path(".") / ".env"
-load_dotenv(dotenv_path=env_path)
+load_dotenv(dotenv_path=Path(".") / ".env")
 
-parser = argparse.ArgumentParser(description="Trappin in Japan Jukebox")
-parser.add_argument("-v", "--volume", default=None)
-parser.add_argument("-t", "--type", default="fft")
-parser.add_argument("-r", "--repeat", default=False)
-args = parser.parse_args()
-
-VOLUME = args.volume
-TYPE = args.type
-REPEAT = args.repeat
+BASE = os.getenv("HOME_PATH") or os.path.dirname(os.path.abspath(__file__))
 
 # Playlist URL
 START_URL = "https://www.youtube.com/playlist?list=PL03tCdy8gL5JvpLbxw6SsXaNDBot7b_Ok"
 
 
-if __name__ == "__main__":
-    setup(START_URL)
+def parse_args():
+    parser = argparse.ArgumentParser(description="Trappin in Japan Jukebox")
+    parser.add_argument("-v", "--volume", default=None, help="song number to play")
+    parser.add_argument("-r", "--repeat", default=False, help="repeat one song")
+    parser.add_argument(
+        "-p", "--palette", default="trap", choices=PALETTE_ORDER,
+        help="color palette",
+    )
+    # accepted for backward compatibility; the visualizer is now unified
+    parser.add_argument("-t", "--type", default=None, help=argparse.SUPPRESS)
+    return parser.parse_args()
 
-    # get song options
+
+def pick_song(volumes, played, volume_arg):
+    if volume_arg:
+        return match_song(int(volume_arg), volumes)
+    while (choice := np.random.choice(volumes)) in played:
+        continue
+    return choice
+
+
+def main():
+    args = parse_args()
+    setup(START_URL)
     volumes = get_volumes()
 
-    # exit when user presses a key
-    user_done = False
+    played = set()
     start_time = time.time()
-    played_songs = set()
-    while not user_done:
-        if len(played_songs) == len(volumes):
-            # reset playlist if all songs have been played
-            played_songs.clear()
+    volume_arg = args.volume
 
-        # select song to begin with
-        if VOLUME:
-            audio_name = match_song(int(VOLUME), volumes)
-            if not REPEAT:
-                # avoids repeating on second loop through
-                VOLUME = None
-                played_songs.add(audio_name)
-        else:
-            # select song at random to play
-            while (audio_name := np.random.choice(volumes)) in played_songs:
-                continue
-            played_songs.add(audio_name)
+    while True:
+        if len(played) == len(volumes):
+            played.clear()
 
-        if TYPE == "basic":
-            # just amplitude
-            user_done = oscillating_line(audio_name)
-        else:
-            # fft
-            user_done = spectrogram(audio_name)
+        audio_name = pick_song(volumes, played, volume_arg)
+        played.add(audio_name)
+        if not args.repeat:
+            volume_arg = None  # only honor -v on the first song
 
-    # report session time
-    total_time = time.time() - start_time
-    total_minutes = total_time / 60
-    hours = total_minutes // 60
-    minutes = total_minutes % 60
-    seconds = total_time % 60
+        signal, samplerate = load_wav(f"{BASE}/audio/wav/{audio_name}.wav")
+        engine = AudioEngine(signal, samplerate)
+        title = audio_name.replace("_", " ")
 
-    print(f"Time: {hours}:{minutes}:{seconds}")
+        quit_session = run(engine, title, palette_name=args.palette)
+        if quit_session:
+            break
+
+    total = time.time() - start_time
+    print(f"Played for {int(total // 60)}m {int(total % 60)}s. Stay trappin.")
+
+
+if __name__ == "__main__":
+    main()

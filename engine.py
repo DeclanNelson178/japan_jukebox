@@ -48,6 +48,7 @@ class AudioEngine:
         self._thread = None
         self._stop_flag = threading.Event()
         self.paused = False
+        self.volume = 0.85
 
     # --- pure, hardware-free core -----------------------------------------
     def _next_block(self, frames):
@@ -99,8 +100,13 @@ class AudioEngine:
             if self.paused:
                 self._stream.write(np.zeros((self.blocksize, 1), dtype=np.float32))
                 continue
+            # Volume is applied after the tap is fed, so the visuals stay
+            # stable regardless of listening volume.
             block = self._next_block(self.blocksize)
-            self._stream.write(block.reshape(-1, 1))
+            self._stream.write((block * self.volume).reshape(-1, 1))
+
+    def nudge_volume(self, delta):  # pragma: no cover
+        self.volume = float(min(1.0, max(0.0, self.volume + delta)))
 
     def start(self):  # pragma: no cover - requires audio hardware
         if sd is None:
