@@ -1,30 +1,70 @@
 # japan_jukebox
-Play 'Trappin in Japan' from terminal.
 
-## Set Up:
-Download codebase and install dependencies from `requirements.txt`. Next set os.environ variable for home path. Once everything is installed,
-run `python3 driver.py`
-- Program begins by creating audio and cache directories in same folder as driver file
-- Downloads all songs from YouTube
-- Converts mp4 to mp3 to wav
+A terminal music visualizer. Plays *Trappin in Japan* (or any local wav library)
+and paints a live, truecolor spectrum that jumps with the beat.
 
-## Playing Songs
-Once songs are downloaded, program will choose a song at random, generate necessary data (saving to cache to speed this 
-process up next time), and play audio with visual display.
-- Command Line Options:
-  - `-v INT`: specify the song number that you want played
-    - This feature is mainly for the 'Trappin in Japan' playlist
-    - Defaults to random
-  - `-r BOOLEAN`: whether to play one song on repeat or shuffle through all audio
-    - Defaults to false
-  - `-t basic/fft`: display oscillating amplitude bar or spectogram
-    - Defaults to spectogram
+```
+        ▃   ▇  ▆▃▄▅▂  █
+  ▆     █  ▇█ ▁█████▄▆█▅   ▔   ▇█
+  █ ▂   █▔ ██ ██████████▅▁▆█▆▆▇██▆ ▃▅▆▇
+  █ █   ██ ██ ████████████████████▃████▄▂█▆
+```
 
-## Other Music
-This program was written specifically for playing the different volumes of 'Trappin in Japan' on YouTube.
-It can be adapted to play other playlists with minimum work. Replacing `START_URL` global
-variable in driver with desired playlist URL will do the trick. Note that any previous audio and cache data
-present will be overwritten. Also note that the `-v` CLI argument will no longer work.
+## How it works
 
+- **Real-time engine** (`engine.py`) streams audio and exposes a synchronized
+  tap of the samples currently hitting the speakers — the visuals are FFT'd from
+  exactly what you hear, so there's no wall-clock drift.
+- **Spectral analysis** (`spectrum.py`) maps each window onto log-spaced
+  (mel-like) bands, with fast-attack/slow-decay smoothing, floating peak caps,
+  and kick-drum beat detection.
+- **Renderer** (`render.py` + `visualizer.py`) draws a bottom-anchored spectrum
+  with sub-cell block glyphs, 24-bit gradient color, and a beat pulse.
 
-Playlist URL: https://www.youtube.com/playlist?list=PL03tCdy8gL5JvpLbxw6SsXaNDBot7b_Ok
+Requires a truecolor terminal (iTerm2, Ghostty, Kitty, WezTerm).
+
+## Setup
+
+```sh
+pip install -r requirements.txt
+```
+
+Set `HOME_PATH` in `.env` to the repo path (defaults to the driver's directory).
+The `audio/wav` library is played directly; on a fresh checkout `driver.py` will
+fetch and transcode the playlist first.
+
+```sh
+python3 driver.py
+```
+
+## Controls
+
+| key | action |
+|-----|--------|
+| `space` | pause / resume |
+| `→` / `n` | skip song |
+| `↑` / `↓` | volume |
+| `g` | cycle palette (trap · aurora · ice · sunset) |
+| `q` | quit |
+
+## Command-line options
+
+- `-v INT` — play a specific *Trappin in Japan* volume number (default: random)
+- `-r` — repeat one song instead of shuffling (default: off)
+- `-p NAME` — start palette: `trap` (default), `aurora`, `ice`, `sunset`
+
+## Other music
+
+Point `START_URL` in `driver.py` at another playlist to build a different
+library. (Downloading uses `yt-dlp`; the old `pytube` path is dead.) The `-v`
+option is specific to the Trappin numbering.
+
+Playlist: https://www.youtube.com/playlist?list=PL03tCdy8gL5JvpLbxw6SsXaNDBot7b_Ok
+
+## Tests
+
+```sh
+pytest
+```
+
+The pure DSP/render/engine logic is unit tested without audio hardware.
