@@ -2,6 +2,9 @@ import re
 
 import numpy as np
 
+import os
+import threading
+
 from visualizer import (
     PALETTES,
     add_ripple,
@@ -9,6 +12,7 @@ from visualizer import (
     decay_ripple,
     help_frame,
     parse_input,
+    _read_pending,
 )
 
 ANSI = re.compile(r"\x1b\[[0-9;?]*[a-zA-Z]")
@@ -135,3 +139,29 @@ def test_add_ripple_peaks_at_center():
     out = add_ripple(r, idx=5, strength=1.0, sigma=1.5)
     assert np.argmax(out) == 5
     assert out[5] > out[0]
+
+
+def test_read_pending_returns_available_without_blocking():
+    """The freeze bug: a single byte must come back at once, not block waiting
+    for a full buffer's worth of input."""
+    r, w = os.pipe()
+    try:
+        os.write(w, b"abc")
+        result = {}
+        t = threading.Thread(target=lambda: result.setdefault("v", _read_pending(r)))
+        t.start()
+        t.join(timeout=1.0)
+        assert not t.is_alive(), "_read_pending blocked on a partial read"
+        assert result["v"] == "abc"
+    finally:
+        os.close(r)
+        os.close(w)
+
+
+def test_read_pending_empty_when_nothing_available():
+    r, w = os.pipe()
+    try:
+        assert _read_pending(r) == ""
+    finally:
+        os.close(r)
+        os.close(w)

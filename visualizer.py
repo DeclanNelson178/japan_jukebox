@@ -302,17 +302,25 @@ def _raw_terminal():
         sys.stdout.flush()
 
 
-def _read_pending():
-    """Read all bytes currently available on stdin (non-blocking)."""
+def _read_pending(fd=None):
+    """Read all bytes currently available on `fd` (default: stdin), non-blocking.
+
+    Reads straight from the file descriptor with os.read, not sys.stdin.read:
+    a buffered text read blocks until it has the *full* requested count, so a
+    single keypress or mouse-motion byte would hang the whole loop. os.read
+    returns whatever is ready right now.
+    """
+    if fd is None:
+        fd = sys.stdin.fileno()
     chunks = []
-    while select.select([sys.stdin], [], [], 0)[0]:
-        data = sys.stdin.read(1024)
-        if not data:
+    while select.select([fd], [], [], 0)[0]:
+        data = os.read(fd, 4096)
+        if not data:  # EOF
             break
         chunks.append(data)
-        if len(data) < 1024:
+        if len(data) < 4096:
             break
-    return "".join(chunks)
+    return b"".join(chunks).decode("utf-8", "ignore")
 
 
 def run(engine, title, palette_name="trap", n_bins=72, fps=60):
