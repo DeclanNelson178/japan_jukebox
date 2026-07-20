@@ -18,7 +18,7 @@ import time
 import tty
 
 from render import RESET, frame_payload, sample_gradient, spectrum_frame, truecolor_fg
-from spectrum import compute_bands, log_band_edges, to_display
+from spectrum import Gravity, compute_bands, log_band_edges, to_display
 
 # V1 spectrum tuning (see VISUALIZER_PLAN.md). A large window is required to
 # resolve real bass; RAW_GAIN is the eyeball knob for overall bar height until
@@ -27,6 +27,11 @@ FFT_WINDOW = 8192
 FMIN = 40.0
 FMAX = 16000.0
 RAW_GAIN = 20.0
+
+# V2 motion tuning: ATTACK is how fast bars rise (temporal smoothing), GRAVITY
+# is how hard they fall — higher = snappier drop.
+ATTACK = 0.6
+GRAVITY = 0.0025
 
 # Header accent gradients (kept from the old visual; only the header uses them
 # in V0, but the palette machinery returns in the polish phase).
@@ -134,13 +139,14 @@ def _idle_body(paused, width, height, palette):
     return lines
 
 
-def _spectrum_body(engine, width, height):
-    """The V1 body: raw log-spaced spectrum bars, one band per column."""
+def _spectrum_body(engine, width, height, smoother):
+    """Log-spaced spectrum bars, one band per column, with V2 gravity motion."""
     n_bands = max(1, width)
     edges = log_band_edges(n_bands, FMIN, min(FMAX, engine.samplerate / 2.0))
     window = engine.latest_window(FFT_WINDOW)
     bands = compute_bands(window, engine.samplerate, edges)
     disp = to_display(bands, FFT_WINDOW, gain=RAW_GAIN)
+    disp = smoother.update(disp)
     return spectrum_frame(disp, height)
 
 
@@ -203,11 +209,16 @@ def run(engine, title, palette_name="trap", fps=30):
     quit_session = False
     skip = False
     frame_dt = 1.0 / fps
+    smoother = None
+    sm_width = None
 
     with _raw_terminal():
         while not engine.finished and not skip and not quit_session:
             frame_start = time.time()
             width, rows = screen.size()
+            if width != sm_width:  # (re)size the per-band motion state
+                smoother = Gravity(max(1, width), attack=ATTACK, gravity=GRAVITY)
+                sm_width = width
 
             for event in parse_input(_read_pending()):
                 if event[0] == "arrow":
@@ -234,7 +245,7 @@ def run(engine, title, palette_name="trap", fps=30):
             frame = (
                 [_header(title, engine.position_seconds, engine.duration_seconds,
                          width, palette)]
-                + _spectrum_body(engine, width, body_rows)
+                + _spectrum_body(engine, width, body_rows, smoother)
                 + [_footer(width, PALETTE_ORDER[pal_idx])]
             )
             screen.draw(frame)

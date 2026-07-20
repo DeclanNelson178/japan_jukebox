@@ -60,6 +60,33 @@ def to_display(bands, n, gain=20.0, curve=0.5, noise_floor=0.12):
     return height
 
 
+class Gravity:
+    """cava-style asymmetric motion: snap up, fall under accelerating gravity.
+
+    Rising bars ease toward the new height at `attack` (temporal smoothing that
+    kills frame-to-frame flicker). Falling bars ignore the noisy instantaneous
+    value and drop from their last height under gravity — the fall distance
+    grows with the square of how long the bar has been falling, so it starts
+    gentle and accelerates. That parabolic fall is the lively-but-smooth look a
+    symmetric EMA can't produce.
+    """
+
+    def __init__(self, size, attack=0.6, gravity=0.0025):
+        self.value = np.zeros(size, dtype=np.float32)
+        self.fall = np.zeros(size, dtype=np.float32)
+        self.attack = attack
+        self.gravity = gravity
+
+    def update(self, x):
+        x = np.asarray(x, dtype=np.float32)
+        rising = x >= self.value
+        self.fall = np.where(rising, 0.0, self.fall + 1.0)
+        up = self.value + (x - self.value) * self.attack
+        down = np.maximum(self.value - self.gravity * self.fall ** 2, 0.0)
+        self.value = np.where(rising, up, down).astype(np.float32)
+        return self.value.copy()
+
+
 class Smoother:
     """Per-band exponential smoothing: snappy on the way up, graceful down."""
 

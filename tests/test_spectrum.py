@@ -2,6 +2,7 @@ import numpy as np
 
 from spectrum import (
     BeatDetector,
+    Gravity,
     PeakHold,
     Smoother,
     compute_bands,
@@ -78,6 +79,36 @@ def test_to_display_noise_floor_gates_quiet_to_zero():
     assert quiet[0] == 0.0
     loud = to_display(np.array([1e6]), n=8192, gain=20.0, noise_floor=0.1)
     assert np.isclose(loud[0], 1.0)
+
+
+def test_gravity_rises_fast_but_not_instant():
+    # a rising bar eases up toward the new height (temporal smoothing on rise)
+    g = Gravity(size=1, attack=0.5, gravity=0.1)
+    assert np.isclose(g.update(np.array([1.0]))[0], 0.5)
+
+
+def test_gravity_fall_accelerates():
+    # once falling, each frame drops further than the last (parabolic gravity)
+    g = Gravity(size=1, attack=1.0, gravity=0.1)
+    assert np.isclose(g.update(np.array([1.0]))[0], 1.0)   # snaps up instantly
+    assert np.isclose(g.update(np.array([0.0]))[0], 0.9)   # fall step 1: -0.1*1
+    assert np.isclose(g.update(np.array([0.0]))[0], 0.5)   # fall step 2: -0.1*4
+
+
+def test_gravity_snap_up_resets_fall():
+    g = Gravity(size=1, attack=1.0, gravity=0.1)
+    g.update(np.array([1.0]))
+    g.update(np.array([0.0]))                               # now 0.9, fall=1
+    assert np.isclose(g.update(np.array([1.0]))[0], 1.0)    # a rise resets fall
+    assert np.isclose(g.update(np.array([0.0]))[0], 0.9)    # fall restarts at 1
+
+
+def test_gravity_never_goes_negative():
+    g = Gravity(size=1, attack=1.0, gravity=0.5)
+    g.update(np.array([1.0]))
+    for _ in range(10):
+        out = g.update(np.array([0.0]))
+    assert out[0] == 0.0
 
 
 def test_smoother_attack_then_decay():
