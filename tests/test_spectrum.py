@@ -66,9 +66,18 @@ def test_to_display_monotonic_and_clipped():
 def test_to_display_curve_boosts_quiet_bands():
     # the sub-linear curve lifts a quiet band so it stays visible
     bands = np.array([1.0])
-    linear = to_display(bands, n=8192, gain=1.0, curve=1.0)
-    boosted = to_display(bands, n=8192, gain=1.0, curve=0.5)
+    linear = to_display(bands, n=8192, gain=1.0, curve=1.0, noise_floor=0.0)
+    boosted = to_display(bands, n=8192, gain=1.0, curve=0.5, noise_floor=0.0)
     assert boosted[0] > linear[0]
+
+
+def test_to_display_noise_floor_gates_quiet_to_zero():
+    # below the floor reads as empty (no permanent solid baseline); a loud band
+    # still saturates at full height.
+    quiet = to_display(np.array([1.0]), n=8192, gain=20.0, noise_floor=0.1)
+    assert quiet[0] == 0.0
+    loud = to_display(np.array([1e6]), n=8192, gain=20.0, noise_floor=0.1)
+    assert np.isclose(loud[0], 1.0)
 
 
 def test_smoother_attack_then_decay():

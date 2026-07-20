@@ -43,16 +43,21 @@ def compute_bands(window, samplerate, edges):
     return bands
 
 
-def to_display(bands, n, gain=20.0, curve=0.5):
+def to_display(bands, n, gain=20.0, curve=0.5, noise_floor=0.12):
     """Map raw band magnitudes to display heights in [0, 1] — no smoothing.
 
     Normalizing by the FFT size `n` makes the scale independent of the window
     length. The sub-linear `curve` (sqrt by default) lifts quiet bands so they
-    stay visible without blowing silence up to full height. This is the raw V1
-    mapping; autosens replaces the fixed `gain` in a later phase.
+    stay visible without blowing silence up to full height. `noise_floor` then
+    gates out everything below that height and rescales what remains, so the
+    ever-present noise floor doesn't light every column's bottom cell into a
+    permanent solid baseline. Raw V1 mapping; autosens replaces `gain` later.
     """
     x = np.maximum(np.asarray(bands, dtype=np.float32), 0.0) / n * gain
-    return np.clip(x ** curve, 0.0, 1.0)
+    height = np.clip(x ** curve, 0.0, 1.0)
+    if noise_floor > 0.0:
+        height = np.clip((height - noise_floor) / (1.0 - noise_floor), 0.0, 1.0)
+    return height
 
 
 class Smoother:
