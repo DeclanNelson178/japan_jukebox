@@ -17,16 +17,27 @@ import termios
 import time
 import tty
 
+import numpy as np
+
 from render import RESET, frame_payload, sample_gradient, spectrum_frame, truecolor_fg
-from spectrum import Gravity, compute_bands, log_band_edges, to_display
+from spectrum import (
+    Gravity,
+    compute_bands,
+    frequency_tilt,
+    log_band_edges,
+    to_display,
+)
 
 # V1 spectrum tuning (see VISUALIZER_PLAN.md). A large window is required to
 # resolve real bass; RAW_GAIN is the eyeball knob for overall bar height until
-# autosens lands.
+# autosens lands. TILT_SLOPE lifts treble (which falls off ~1/f) so the right
+# side stays alive; NOISE_FLOOR gates true silence without a solid baseline.
 FFT_WINDOW = 8192
 FMIN = 40.0
 FMAX = 16000.0
 RAW_GAIN = 20.0
+TILT_SLOPE = 0.4
+NOISE_FLOOR = 0.08
 
 # V2 motion tuning: ATTACK is how fast bars rise (temporal smoothing), GRAVITY
 # is how hard they fall — higher = snappier drop.
@@ -143,9 +154,11 @@ def _spectrum_body(engine, width, height, smoother):
     """Log-spaced spectrum bars, one band per column, with V2 gravity motion."""
     n_bands = max(1, width)
     edges = log_band_edges(n_bands, FMIN, min(FMAX, engine.samplerate / 2.0))
+    centers = np.sqrt(edges[:-1] * edges[1:])
     window = engine.latest_window(FFT_WINDOW)
     bands = compute_bands(window, engine.samplerate, edges)
-    disp = to_display(bands, FFT_WINDOW, gain=RAW_GAIN)
+    gain = RAW_GAIN * frequency_tilt(centers, FMIN, TILT_SLOPE)
+    disp = to_display(bands, FFT_WINDOW, gain=gain, noise_floor=NOISE_FLOOR)
     disp = smoother.update(disp)
     return spectrum_frame(disp, height)
 

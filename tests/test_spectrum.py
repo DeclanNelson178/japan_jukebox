@@ -6,6 +6,7 @@ from spectrum import (
     PeakHold,
     Smoother,
     compute_bands,
+    frequency_tilt,
     log_band_edges,
     to_display,
 )
@@ -48,6 +49,16 @@ def test_compute_bands_fills_bands_narrower_than_bin_spacing():
     edges = log_band_edges(40, 40, 120)
     bands = compute_bands(sig, sr, edges)
     assert not np.any(bands == 0.0)
+
+
+def test_frequency_tilt_boosts_highs_and_is_unity_at_fmin():
+    # music falls off ~1/f; the tilt lifts high bands so treble stays visible
+    # above the noise floor. Unity at fmin keeps the bass level unchanged.
+    centers = np.array([40.0, 400.0, 4000.0])
+    tilt = frequency_tilt(centers, fmin=40.0, slope=0.5)
+    assert np.isclose(tilt[0], 1.0)
+    assert np.all(np.diff(tilt) > 0)
+    assert np.isclose(tilt[2], 100.0 ** 0.5)  # 4000/40 = 100x up
 
 
 def test_to_display_zeros_stay_zero():

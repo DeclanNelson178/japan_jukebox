@@ -43,6 +43,17 @@ def compute_bands(window, samplerate, edges):
     return bands
 
 
+def frequency_tilt(centers, fmin, slope=0.4):
+    """Per-band gain that rises with frequency to counter music's ~1/f falloff.
+
+    Bass swamps treble in raw magnitude, so without this the high bands sit
+    below the noise floor and the right side of the display goes dead. The tilt
+    is a power law of frequency, unity at `fmin` (bass unchanged) and larger
+    toward the top; `slope` sets how much treble is lifted.
+    """
+    return (np.asarray(centers, dtype=np.float32) / fmin) ** slope
+
+
 def to_display(bands, n, gain=20.0, curve=0.5, noise_floor=0.12):
     """Map raw band magnitudes to display heights in [0, 1] — no smoothing.
 
