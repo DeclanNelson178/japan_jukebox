@@ -5,6 +5,7 @@ import threading
 from visualizer import (
     PALETTES,
     parse_input,
+    _help_lines,
     _idle_body,
     _read_pending,
 )
@@ -54,6 +55,18 @@ def test_idle_body_shows_play_and_pause_state():
                       _idle_body(True, 30, 7, PALETTES["trap"]))
     assert "playing" in playing and "paused" not in playing
     assert "paused" in paused and "playing" not in paused
+
+
+# --- help overlay ---------------------------------------------------------
+
+def test_help_lines_dimensions_and_content():
+    lines = _help_lines(60, 12, PALETTES["trap"])
+    assert len(lines) == 12
+    for line in lines:
+        assert len(visible(line)) == 60
+    text = " ".join(visible(line) for line in lines).lower()
+    for word in ("pause", "skip", "volume", "sync", "palette", "quit"):
+        assert word in text
 
 
 # --- non-blocking input reads ---------------------------------------------

@@ -146,7 +146,7 @@ def _header(title, pos, dur, width, palette):
 
 
 def _footer(width, palette_name, sync_ms):
-    keys = "space pause · → skip · ↑↓ vol · [ ] sync · g palette · q quit"
+    keys = "space pause · → skip · ↑↓ vol · [ ] sync · g palette · ? help · q quit"
     return f"\x1b[2m{keys}   sync {sync_ms:+d}ms [{palette_name}]{RESET}"
 
 
@@ -161,6 +161,40 @@ def _idle_body(paused, width, height, palette):
             pad = max(0, (width - len(state)) // 2)
             tail = max(0, width - pad - len(state))
             lines.append(" " * pad + color + state + RESET + " " * tail)
+        else:
+            lines.append(" " * width)
+    return lines
+
+
+_HELP_ROWS = [
+    ("space", "pause / play"),
+    ("→  n", "skip song"),
+    ("↑  ↓", "volume"),
+    ("[  ]", "sync offset"),
+    ("g", "cycle palette"),
+    ("?", "toggle this help"),
+    ("q", "quit"),
+]
+
+
+def _help_lines(width, height, palette):
+    """A centered controls panel filling `height` blank rows of `width`."""
+    color = truecolor_fg(sample_gradient(palette, 0.7))
+    dim = "\x1b[2m"
+    rows = [f"{color}controls{RESET}", ""]
+    keyw = max(len(k) for k, _ in _HELP_ROWS)
+    for key, desc in _HELP_ROWS:
+        rows.append(f"{color}{key:>{keyw}}{RESET}  {dim}{desc}{RESET}")
+    top = max(0, (height - len(rows)) // 2)
+    lines = []
+    for r in range(height):
+        idx = r - top
+        if 0 <= idx < len(rows):
+            text = rows[idx]
+            vis = len(_visible(text))
+            pad = max(0, (width - vis) // 2)
+            tail = max(0, width - pad - vis)
+            lines.append(" " * pad + text + " " * tail)
         else:
             lines.append(" " * width)
     return lines
@@ -257,6 +291,7 @@ def run(engine, title, palette_name="trap", fps=30):
     sm_width = None
     autosens = AutoSens()
     beat = BeatPulse()
+    show_help = False
     # Manual fine-tune (ms) on top of the engine's measured output latency, so
     # the user can dial the visuals into perfect sync when the reported
     # Bluetooth latency is a little off.
@@ -293,6 +328,8 @@ def run(engine, title, palette_name="trap", fps=30):
                         sync_trim_ms -= 10
                     elif k == "]":
                         sync_trim_ms += 10
+                    elif k == "?":
+                        show_help = not show_help
 
             delay_samples = max(
                 0, engine.latency_samples + sync_trim_ms * engine.samplerate // 1000
@@ -300,11 +337,15 @@ def run(engine, title, palette_name="trap", fps=30):
             total_sync_ms = int(delay_samples * 1000 / engine.samplerate)
             palette = PALETTES[PALETTE_ORDER[pal_idx]]
             body_rows = max(1, rows - 2)
+            body = (
+                _help_lines(width, body_rows, palette) if show_help
+                else _spectrum_body(engine, width, body_rows, smoother, autosens,
+                                    beat, delay_samples, palette)
+            )
             frame = (
                 [_header(title, engine.position_seconds, engine.duration_seconds,
                          width, palette)]
-                + _spectrum_body(engine, width, body_rows, smoother, autosens,
-                                 beat, delay_samples, palette)
+                + body
                 + [_footer(width, PALETTE_ORDER[pal_idx], total_sync_ms)]
             )
             screen.draw(frame)
