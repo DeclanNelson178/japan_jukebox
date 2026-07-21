@@ -21,6 +21,7 @@ import numpy as np
 
 from render import RESET, frame_payload, sample_gradient, spectrum_frame, truecolor_fg
 from spectrum import (
+    AutoSens,
     Gravity,
     compute_bands,
     frequency_tilt,
@@ -150,10 +151,11 @@ def _idle_body(paused, width, height, palette):
     return lines
 
 
-def _spectrum_body(engine, width, height, smoother, delay_samples):
+def _spectrum_body(engine, width, height, smoother, autosens, delay_samples):
     """Log-spaced spectrum bars, one band per column, with V2 gravity motion.
 
-    `delay_samples` steps the analysis window back to match what's audible now.
+    `delay_samples` steps the analysis window back to match what's audible now;
+    `autosens` adapts the overall gain so quiet and loud sections both fill up.
     """
     n_bands = max(1, width)
     edges = log_band_edges(n_bands, FMIN, min(FMAX, engine.samplerate / 2.0))
@@ -161,7 +163,9 @@ def _spectrum_body(engine, width, height, smoother, delay_samples):
     window = engine.latest_window(FFT_WINDOW, delay_samples)
     bands = compute_bands(window, engine.samplerate, edges)
     gain = RAW_GAIN * frequency_tilt(centers, FMIN, TILT_SLOPE)
-    disp = to_display(bands, FFT_WINDOW, gain=gain, noise_floor=NOISE_FLOOR)
+    disp = to_display(bands, FFT_WINDOW, gain=gain,
+                      noise_floor=NOISE_FLOOR, sens=autosens.sens)
+    autosens.update(float(disp.max()))  # adapt gain from this frame's peak
     disp = smoother.update(disp)
     return spectrum_frame(disp, height)
 
@@ -227,6 +231,7 @@ def run(engine, title, palette_name="trap", fps=30):
     frame_dt = 1.0 / fps
     smoother = None
     sm_width = None
+    autosens = AutoSens()
     # Manual fine-tune (ms) on top of the engine's measured output latency, so
     # the user can dial the visuals into perfect sync when the reported
     # Bluetooth latency is a little off.
@@ -273,7 +278,8 @@ def run(engine, title, palette_name="trap", fps=30):
             frame = (
                 [_header(title, engine.position_seconds, engine.duration_seconds,
                          width, palette)]
-                + _spectrum_body(engine, width, body_rows, smoother, delay_samples)
+                + _spectrum_body(engine, width, body_rows, smoother, autosens,
+                                 delay_samples)
                 + [_footer(width, PALETTE_ORDER[pal_idx], total_sync_ms)]
             )
             screen.draw(frame)

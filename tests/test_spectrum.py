@@ -1,6 +1,7 @@
 import numpy as np
 
 from spectrum import (
+    AutoSens,
     BeatDetector,
     Gravity,
     PeakHold,
@@ -120,6 +121,44 @@ def test_gravity_never_goes_negative():
     for _ in range(10):
         out = g.update(np.array([0.0]))
     assert out[0] == 0.0
+
+
+def test_autosens_backs_off_fast_when_clipping():
+    a = AutoSens(up=1.02, down=0.9)
+    start = a.sens
+    a.update(1.0)                       # a bar hit the ceiling -> reduce gain
+    assert a.sens == start * 0.9
+
+
+def test_autosens_creeps_up_when_there_is_headroom():
+    a = AutoSens(up=1.02, down=0.9, target=0.9)
+    start = a.sens
+    a.update(0.4)                       # frame is quiet -> raise gain slowly
+    assert a.sens == start * 1.02
+
+
+def test_autosens_up_is_slower_than_down():
+    # asymmetric so it ducks loud drops instantly but swells quiet parts gently
+    a = AutoSens()
+    assert (1 - a.down) > (a.up - 1)
+
+
+def test_autosens_holds_on_silence():
+    a = AutoSens()
+    start = a.sens
+    a.update(0.0)                       # don't amplify a silent intro's noise
+    assert a.sens == start
+
+
+def test_autosens_clamped_to_bounds():
+    hi = AutoSens(up=2.0, max_sens=1.5)
+    for _ in range(10):
+        hi.update(0.1)
+    assert hi.sens <= 1.5
+    lo = AutoSens(down=0.1, min_sens=0.5)
+    for _ in range(10):
+        lo.update(1.0)
+    assert lo.sens >= 0.5
 
 
 def test_smoother_attack_then_decay():

@@ -54,21 +54,64 @@ def frequency_tilt(centers, fmin, slope=0.4):
     return (np.asarray(centers, dtype=np.float32) / fmin) ** slope
 
 
-def to_display(bands, n, gain=20.0, curve=0.5, noise_floor=0.12):
-    """Map raw band magnitudes to display heights in [0, 1] — no smoothing.
+def to_display(bands, n, gain=20.0, curve=0.5, noise_floor=0.12, sens=1.0):
+    """Map raw band magnitudes to display heights in [0, 1].
 
     Normalizing by the FFT size `n` makes the scale independent of the window
     length. The sub-linear `curve` (sqrt by default) lifts quiet bands so they
-    stay visible without blowing silence up to full height. `noise_floor` then
-    gates out everything below that height and rescales what remains, so the
-    ever-present noise floor doesn't light every column's bottom cell into a
-    permanent solid baseline. Raw V1 mapping; autosens replaces `gain` later.
+    stay visible without blowing silence up to full height. `sens` is the
+    autosens gain that adapts to the music's level over time (1.0 = neutral).
+    `noise_floor` then gates out everything below that height and rescales what
+    remains, so the ever-present noise floor doesn't light every column's bottom
+    cell into a permanent solid baseline.
     """
     x = np.maximum(np.asarray(bands, dtype=np.float32), 0.0) / n * gain
-    height = np.clip(x ** curve, 0.0, 1.0)
+    height = np.clip(x ** curve * sens, 0.0, 1.0)
     if noise_floor > 0.0:
         height = np.clip((height - noise_floor) / (1.0 - noise_floor), 0.0, 1.0)
     return height
+
+
+class AutoSens:
+    """cava-style automatic gain: a single sensitivity multiplier that tracks
+    the music's level so both quiet intros and loud drops fill the frame.
+
+    Each frame it looks at the tallest bar. If anything hit the ceiling it cuts
+    gain fast (duck the drop before it flat-tops); if there's headroom it raises
+    gain slowly (swell the quiet part without pumping). Silence is ignored so
+    the noise floor of an empty intro isn't amplified into a full frame.
+    """
+
+    def __init__(self, up=1.004, down=0.9, target=0.9, ramp_cap=50,
+                 min_sens=0.02, max_sens=200.0, silence=0.02):
+        self.sens = 1.0
+        self.up = up
+        self.down = down
+        self.target = target
+        self.ramp_cap = ramp_cap
+        self.min_sens = min_sens
+        self.max_sens = max_sens
+        self.silence = silence
+        self._quiet = 0  # consecutive frames of headroom since the last clip
+
+    def update(self, peak):
+        """Adapt to this frame's tallest (already sens-scaled, clipped) bar."""
+        peak = float(peak)
+        if peak >= self.silence:
+            if peak >= 1.0:
+                self.sens *= self.down     # clipped -> duck fast
+                self._quiet = 0
+            elif peak < self.target:
+                # Creep up, but accelerate the longer it's been since a clip:
+                # gentle just after a beat (no per-beat pumping), fast into a
+                # sustained quiet section.
+                self._quiet += 1
+                step = 1.0 + (self.up - 1.0) * min(self._quiet, self.ramp_cap)
+                self.sens *= step
+            else:
+                self._quiet = 0            # sitting near target -> hold
+        self.sens = float(min(self.max_sens, max(self.min_sens, self.sens)))
+        return self.sens
 
 
 class Gravity:
