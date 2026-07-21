@@ -37,11 +37,14 @@ def to_mono(samples):
 class AudioEngine:
     """Streams a mono float32 signal and tracks a rolling window for analysis."""
 
-    def __init__(self, signal, samplerate, blocksize=1024, tap_size=8192):
+    def __init__(self, signal, samplerate, blocksize=1024, tap_size=32768):
         self._signal = np.asarray(signal, dtype=np.float32)
         self.samplerate = int(samplerate)
         self.blocksize = int(blocksize)
         self._cursor = 0
+        # The tap must hold the analysis window *plus* enough history to step
+        # back by the output latency (Bluetooth can be ~200 ms), so it's much
+        # larger than one FFT window.
         self._tap = np.zeros(int(tap_size), dtype=np.float32)
         self._lock = threading.Lock()
         self._stream = None
@@ -49,6 +52,7 @@ class AudioEngine:
         self._stop_flag = threading.Event()
         self.paused = False
         self.volume = 0.85
+        self.latency_samples = 0  # set from the real stream latency in start()
 
     # --- pure, hardware-free core -----------------------------------------
     def _next_block(self, frames):
@@ -69,14 +73,22 @@ class AudioEngine:
             self._tap = np.concatenate([self._tap[frames:], chunk])
         return chunk
 
-    def latest_window(self, n):
-        """Most recent `n` mono samples (left zero-padded if not enough yet)."""
+    def latest_window(self, n, delay=0):
+        """`n` mono samples ending `delay` samples back from the newest.
+
+        `delay=0` is the most recent window (left zero-padded if not enough
+        seen yet). A positive `delay` steps back in write-time to line the
+        analysis up with what is currently audible, compensating for the output
+        buffer latency between `stream.write` and the speakers.
+        """
         with self._lock:
             tap = self._tap
-        if n <= len(tap):
-            return tap[-n:].copy()
-        pad = np.zeros(n - len(tap), dtype=np.float32)
-        return np.concatenate([pad, tap])
+        end = len(tap) - int(delay)
+        seg = tap[max(0, end - n):max(0, end)]
+        if len(seg) < n:
+            pad = np.zeros(n - len(seg), dtype=np.float32)
+            return np.concatenate([pad, seg])
+        return seg.copy()
 
     @property
     def position_seconds(self):
@@ -117,8 +129,12 @@ class AudioEngine:
             blocksize=self.blocksize,
             channels=1,
             dtype="float32",
+            latency="low",  # don't ask for a big buffer; less audio/visual lag
         )
         self._stream.start()
+        # The visuals lead the sound by however much audio sits buffered ahead
+        # of the speakers. Record it so the tap can be delayed to match.
+        self.latency_samples = int(self._stream.latency * self.samplerate)
         self._thread = threading.Thread(target=self._writer_loop, daemon=True)
         self._thread.start()
 

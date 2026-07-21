@@ -63,3 +63,24 @@ def test_latest_window_returns_most_recent_when_full():
     eng._next_block(8)  # 8..15
     win = eng.latest_window(4)
     assert np.allclose(win, [12, 13, 14, 15])
+
+
+def test_latest_window_delay_returns_earlier_samples():
+    # `delay` steps the window back in write-time to compensate for output
+    # latency, so the FFT sees what is *currently audible*, not what was just
+    # queued (which won't be heard until the buffer drains).
+    signal = np.arange(100, dtype=np.float32)
+    eng = AudioEngine(signal, samplerate=10, blocksize=50, tap_size=50)
+    eng._next_block(50)  # tap now holds 0..49
+    assert np.allclose(eng.latest_window(10), np.arange(40, 50))
+    assert np.allclose(eng.latest_window(10, delay=10), np.arange(30, 40))
+
+
+def test_latest_window_delay_pads_when_history_too_short():
+    signal = np.arange(20, dtype=np.float32)
+    eng = AudioEngine(signal, samplerate=10, blocksize=20, tap_size=20)
+    eng._next_block(20)  # tap holds 0..19
+    win = eng.latest_window(10, delay=15)  # window ends at 20-15=5
+    assert win.shape == (10,)
+    assert np.allclose(win[:5], np.zeros(5))
+    assert np.allclose(win[5:], np.arange(0, 5))

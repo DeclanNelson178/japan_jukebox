@@ -129,9 +129,9 @@ def _header(title, pos, dur, width, palette):
     return f"{color}{left}{RESET} {bar} {right}"
 
 
-def _footer(width, palette_name):
-    keys = "space pause · → skip · ↑↓ vol · g palette · q quit"
-    return f"\x1b[2m{keys}   [{palette_name}]{RESET}"
+def _footer(width, palette_name, sync_ms):
+    keys = "space pause · → skip · ↑↓ vol · [ ] sync · g palette · q quit"
+    return f"\x1b[2m{keys}   sync {sync_ms:+d}ms [{palette_name}]{RESET}"
 
 
 def _idle_body(paused, width, height, palette):
@@ -150,12 +150,15 @@ def _idle_body(paused, width, height, palette):
     return lines
 
 
-def _spectrum_body(engine, width, height, smoother):
-    """Log-spaced spectrum bars, one band per column, with V2 gravity motion."""
+def _spectrum_body(engine, width, height, smoother, delay_samples):
+    """Log-spaced spectrum bars, one band per column, with V2 gravity motion.
+
+    `delay_samples` steps the analysis window back to match what's audible now.
+    """
     n_bands = max(1, width)
     edges = log_band_edges(n_bands, FMIN, min(FMAX, engine.samplerate / 2.0))
     centers = np.sqrt(edges[:-1] * edges[1:])
-    window = engine.latest_window(FFT_WINDOW)
+    window = engine.latest_window(FFT_WINDOW, delay_samples)
     bands = compute_bands(window, engine.samplerate, edges)
     gain = RAW_GAIN * frequency_tilt(centers, FMIN, TILT_SLOPE)
     disp = to_display(bands, FFT_WINDOW, gain=gain, noise_floor=NOISE_FLOOR)
@@ -224,6 +227,10 @@ def run(engine, title, palette_name="trap", fps=30):
     frame_dt = 1.0 / fps
     smoother = None
     sm_width = None
+    # Manual fine-tune (ms) on top of the engine's measured output latency, so
+    # the user can dial the visuals into perfect sync when the reported
+    # Bluetooth latency is a little off.
+    sync_trim_ms = 0
 
     with _raw_terminal():
         while not engine.finished and not skip and not quit_session:
@@ -252,14 +259,22 @@ def run(engine, title, palette_name="trap", fps=30):
                         skip = True
                     elif k == "g":
                         pal_idx = (pal_idx + 1) % len(PALETTE_ORDER)
+                    elif k == "[":
+                        sync_trim_ms -= 10
+                    elif k == "]":
+                        sync_trim_ms += 10
 
+            delay_samples = max(
+                0, engine.latency_samples + sync_trim_ms * engine.samplerate // 1000
+            )
+            total_sync_ms = int(delay_samples * 1000 / engine.samplerate)
             palette = PALETTES[PALETTE_ORDER[pal_idx]]
             body_rows = max(1, rows - 2)
             frame = (
                 [_header(title, engine.position_seconds, engine.duration_seconds,
                          width, palette)]
-                + _spectrum_body(engine, width, body_rows, smoother)
-                + [_footer(width, PALETTE_ORDER[pal_idx])]
+                + _spectrum_body(engine, width, body_rows, smoother, delay_samples)
+                + [_footer(width, PALETTE_ORDER[pal_idx], total_sync_ms)]
             )
             screen.draw(frame)
 
