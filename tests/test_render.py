@@ -8,6 +8,7 @@ from render import (
     braille_waveform,
     column_glyphs,
     frame_payload,
+    braille_spectrum_frame,
     color_spectrum_frame,
     lerp_color,
     level_to_block,
@@ -167,6 +168,33 @@ def test_mirror_intensity_brightens_toward_white():
                                    intensity=1.5)
     assert "38;2;100;0;0" in plain[0]
     assert "38;2;100;0;0" not in bright[0]
+
+
+def test_braille_spectrum_frame_dimensions_and_charset():
+    # two dot-columns per character cell
+    lines = braille_spectrum_frame([0.0, 0.5, 1.0, 0.2], 5, _PAL)
+    assert len(lines) == 5
+    for line in lines:
+        vis = _strip(line)
+        assert len(vis) == 2                     # 4 dot-columns -> 2 cells
+        assert all(0x2800 <= ord(ch) <= 0x28FF for ch in vis)
+
+
+def test_braille_spectrum_frame_full_column_is_all_dots():
+    lines = braille_spectrum_frame([1.0, 1.0], 3, _PAL)
+    assert all(_strip(line) == chr(0x28FF) for line in lines)  # every dot set
+
+
+def test_braille_spectrum_frame_zero_is_blank_braille():
+    lines = braille_spectrum_frame([0.0, 0.0], 3, _PAL)
+    assert all(_strip(line) == chr(0x2800) for line in lines)
+
+
+def test_braille_spectrum_frame_fills_from_the_bottom():
+    # a half-height column lights the bottom row, not the top
+    lines = [_strip(line) for line in braille_spectrum_frame([0.5, 0.5], 4, _PAL)]
+    assert ord(lines[-1]) != 0x2800     # bottom row has dots
+    assert ord(lines[0]) == 0x2800      # top row empty
 
 
 def test_braille_waveform_dimensions():

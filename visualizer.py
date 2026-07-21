@@ -21,6 +21,7 @@ import numpy as np
 
 from render import (
     RESET,
+    braille_spectrum_frame,
     color_spectrum_frame,
     frame_payload,
     mirror_spectrum_frame,
@@ -147,7 +148,7 @@ def _header(title, pos, dur, width, palette):
 
 
 def _footer(width, palette_name, sync_ms):
-    keys = "space pause · → skip · ↑↓ vol · g palette · m mirror · ? help · q quit"
+    keys = "space pause · → skip · vol ↑↓ · g palette · m mirror · b braille · ? help · q quit"
     return f"\x1b[2m{keys}   sync {sync_ms:+d}ms [{palette_name}]{RESET}"
 
 
@@ -174,6 +175,7 @@ _HELP_ROWS = [
     ("[  ]", "sync offset"),
     ("g", "cycle palette"),
     ("m", "mirror / bars"),
+    ("b", "braille / blocks"),
     ("?", "toggle this help"),
     ("q", "quit"),
 ]
@@ -202,16 +204,22 @@ def _help_lines(width, height, palette):
     return lines
 
 
+def _band_count(width, braille):
+    """Bands per frame: braille packs two dot-columns per character cell."""
+    return max(1, width * 2 if braille else width)
+
+
 def _spectrum_body(engine, width, height, smoother, autosens, beat, delay_samples,
-                   palette, mirror=False):
+                   palette, mirror=False, braille=False):
     """Log-spaced spectrum bars, one band per column, with V2 gravity motion.
 
     `delay_samples` steps the analysis window back to match what's audible now;
     `autosens` adapts the overall gain so quiet and loud sections both fill up;
     `beat` pulses the brightness on the kick; `mirror` centers the spectrum
-    around a horizontal axis instead of anchoring it to the baseline.
+    around a horizontal axis; `braille` draws it in braille dots for a finer
+    edge (and twice the bands).
     """
-    n_bands = max(1, width)
+    n_bands = _band_count(width, braille)
     edges = log_band_edges(n_bands, FMIN, min(FMAX, engine.samplerate / 2.0))
     centers = np.sqrt(edges[:-1] * edges[1:])
     window = engine.latest_window(FFT_WINDOW, delay_samples)
@@ -227,7 +235,12 @@ def _spectrum_body(engine, width, height, smoother, autosens, beat, delay_sample
     # Kick energy = the lowest bands; a beat flashes the whole frame brighter.
     bass = float(bands[:max(1, n_bands // 8)].sum())
     intensity = 1.0 + beat.update(bass) * PULSE_AMOUNT
-    render = mirror_spectrum_frame if mirror else color_spectrum_frame
+    if braille:
+        render = braille_spectrum_frame
+    elif mirror:
+        render = mirror_spectrum_frame
+    else:
+        render = color_spectrum_frame
     return render(disp, height, palette, intensity=intensity)
 
 
@@ -291,11 +304,12 @@ def run(engine, title, palette_name="trap", fps=30):
     skip = False
     frame_dt = 1.0 / fps
     smoother = None
-    sm_width = None
+    sm_size = None
     autosens = AutoSens()
     beat = BeatPulse()
     show_help = False
     mirror = False
+    braille = False
     # Manual fine-tune (ms) on top of the engine's measured output latency, so
     # the user can dial the visuals into perfect sync when the reported
     # Bluetooth latency is a little off.
@@ -305,9 +319,10 @@ def run(engine, title, palette_name="trap", fps=30):
         while not engine.finished and not skip and not quit_session:
             frame_start = time.time()
             width, rows = screen.size()
-            if width != sm_width:  # (re)size the per-band motion state
-                smoother = Gravity(max(1, width), attack=ATTACK, gravity=GRAVITY)
-                sm_width = width
+            n_bands = _band_count(width, braille)
+            if n_bands != sm_size:  # (re)size the per-band motion state
+                smoother = Gravity(n_bands, attack=ATTACK, gravity=GRAVITY)
+                sm_size = n_bands
 
             for event in parse_input(_read_pending()):
                 if event[0] == "arrow":
@@ -336,6 +351,8 @@ def run(engine, title, palette_name="trap", fps=30):
                         show_help = not show_help
                     elif k == "m":
                         mirror = not mirror
+                    elif k == "b":
+                        braille = not braille
 
             delay_samples = max(
                 0, engine.latency_samples + sync_trim_ms * engine.samplerate // 1000
@@ -346,7 +363,7 @@ def run(engine, title, palette_name="trap", fps=30):
             body = (
                 _help_lines(width, body_rows, palette) if show_help
                 else _spectrum_body(engine, width, body_rows, smoother, autosens,
-                                    beat, delay_samples, palette, mirror)
+                                    beat, delay_samples, palette, mirror, braille)
             )
             frame = (
                 [_header(title, engine.position_seconds, engine.duration_seconds,

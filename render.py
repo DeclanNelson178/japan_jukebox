@@ -105,6 +105,49 @@ def color_spectrum_frame(values, rows, palette, intensity=1.0):
     return out
 
 
+_BRAILLE_FULL_COL = (
+    BRAILLE_DOTS[0][0] | BRAILLE_DOTS[0][1] | BRAILLE_DOTS[0][2] | BRAILLE_DOTS[0][3],
+    BRAILLE_DOTS[1][0] | BRAILLE_DOTS[1][1] | BRAILLE_DOTS[1][2] | BRAILLE_DOTS[1][3],
+)
+
+
+def braille_spectrum_frame(values, rows, palette, intensity=1.0):
+    """Bottom-anchored spectrum drawn in braille dots for an extra-smooth edge.
+
+    Braille packs a 2x4 dot grid per character cell, so two `values` map to one
+    cell and the top edge resolves at 4x the vertical / 2x the horizontal of the
+    block bars — the tops read as a fine curve. Same vertical palette gradient
+    and `intensity` beat-pulse brightening as `color_spectrum_frame`.
+    """
+    n = len(values)
+    width = (n + 1) // 2
+    dot_rows = rows * 4
+    grid = [[0] * width for _ in range(rows)]
+    for i in range(n):
+        v = max(0.0, min(1.0, float(values[i])))
+        filled = int(round(v * dot_rows))
+        cell_col, sub_col = divmod(i, 2)
+        full_cells, rem = divmod(filled, 4)
+        for cell in range(full_cells):
+            grid[rows - 1 - cell][cell_col] |= _BRAILLE_FULL_COL[sub_col]
+        if rem and full_cells < rows:
+            top = rows - 1 - full_cells
+            for sr in range(rem):                       # fill up from the bottom
+                grid[top][cell_col] |= BRAILLE_DOTS[sub_col][3 - sr]
+
+    lift = min(1.0, max(0.0, intensity - 1.0))
+    span = max(1, rows - 1)
+    lines = []
+    for r in range(rows):
+        frac = (rows - 1 - r) / span
+        rgb = sample_gradient(palette, frac)
+        if lift:
+            rgb = lerp_color(rgb, (255, 255, 255), lift)
+        row = "".join(chr(0x2800 + bits) for bits in grid[r])
+        lines.append(truecolor_fg(rgb) + row + RESET)
+    return lines
+
+
 def mirror_spectrum_frame(values, rows, palette, intensity=1.0):
     """Rounded spectrum mirrored around a horizontal center axis (waveform look).
 
