@@ -25,6 +25,7 @@ awaiting a final look.
 | V5 | `4b05a00` | Help overlay (`?`). |
 | V5 | `afdd3fc` | Centered mirror mode (`m`). |
 | V5 | `0073d9f` | Braille top-edge mode (`b`). |
+| V5 | _pending_ | Cool palettes (vaporwave/cyber/miami/matrix); vaporwave is the new default. Guard tests on palette structure + order. |
 
 ## Architecture
 

@@ -4,6 +4,7 @@ import threading
 
 from visualizer import (
     PALETTES,
+    PALETTE_ORDER,
     parse_input,
     _help_lines,
     _idle_body,
@@ -55,6 +56,34 @@ def test_idle_body_shows_play_and_pause_state():
                       _idle_body(True, 30, 7, PALETTES["trap"]))
     assert "playing" in playing and "paused" not in playing
     assert "paused" in paused and "playing" not in paused
+
+
+# --- palettes -------------------------------------------------------------
+
+def test_palette_order_matches_palettes():
+    # Every cyclable name resolves, and nothing defined is left unreachable.
+    assert set(PALETTE_ORDER) == set(PALETTES)
+    assert len(PALETTE_ORDER) == len(PALETTES)
+
+
+def test_new_cool_palettes_present():
+    for name in ("vaporwave", "cyber", "miami", "matrix"):
+        assert name in PALETTES, f"missing palette: {name}"
+        assert name in PALETTE_ORDER
+
+
+def test_palettes_are_well_formed_gradients():
+    for name, stops in PALETTES.items():
+        assert len(stops) >= 2, f"{name} needs at least two stops"
+        positions = [p for p, _ in stops]
+        assert positions[0] == 0.0, f"{name} must start at 0.0"
+        assert positions[-1] == 1.0, f"{name} must end at 1.0"
+        assert positions == sorted(positions), f"{name} stops must ascend"
+        assert len(set(positions)) == len(positions), f"{name} has duplicate stops"
+        for _, rgb in stops:
+            assert len(rgb) == 3, f"{name} stop is not an rgb triple"
+            for c in rgb:
+                assert 0 <= c <= 255, f"{name} channel out of range: {c}"
 
 
 # --- help overlay ---------------------------------------------------------

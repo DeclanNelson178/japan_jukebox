@@ -24,7 +24,7 @@ def parse_args():
     parser.add_argument("-v", "--volume", default=None, help="song number to play")
     parser.add_argument("-r", "--repeat", default=False, help="repeat one song")
     parser.add_argument(
-        "-p", "--palette", default="trap", choices=PALETTE_ORDER,
+        "-p", "--palette", default="vaporwave", choices=PALETTE_ORDER,
         help="color palette",
     )
     # accepted for backward compatibility; the visualizer is now unified

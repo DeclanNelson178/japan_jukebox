@@ -88,8 +88,39 @@ PALETTES = {
         (0.7, (255, 120, 20)),
         (1.0, (255, 220, 90)),
     ],
+    # Neon 80s: deep indigo base rising through hot magenta into electric cyan.
+    "vaporwave": [
+        (0.0, (45, 10, 90)),      # indigo
+        (0.35, (140, 30, 200)),   # violet
+        (0.65, (255, 60, 170)),   # hot magenta
+        (0.85, (90, 200, 255)),   # sky
+        (1.0, (120, 255, 245)),   # electric cyan
+    ],
+    # Cyberpunk neon: cyan → magenta → amber, high-contrast and glowy.
+    "cyber": [
+        (0.0, (0, 200, 255)),     # cyan
+        (0.45, (120, 60, 255)),   # violet
+        (0.75, (255, 40, 190)),   # magenta
+        (1.0, (255, 210, 60)),    # amber
+    ],
+    # Miami: ocean teal into hot flamingo pink.
+    "miami": [
+        (0.0, (0, 190, 190)),     # teal
+        (0.5, (0, 235, 200)),     # aqua
+        (0.8, (255, 90, 150)),    # coral
+        (1.0, (255, 45, 120)),    # flamingo
+    ],
+    # Matrix: phosphor-green monochrome ramp, dark floor to bright top.
+    "matrix": [
+        (0.0, (0, 40, 15)),       # near-black green
+        (0.5, (0, 160, 60)),      # phosphor
+        (0.85, (80, 255, 120)),   # bright
+        (1.0, (200, 255, 210)),   # glow tip
+    ],
 }
-PALETTE_ORDER = ["trap", "aurora", "ice", "sunset"]
+# New cool schemes lead; vaporwave is the fresh default look.
+PALETTE_ORDER = ["vaporwave", "cyber", "miami", "matrix",
+                 "trap", "aurora", "ice", "sunset"]
 
 
 # --------------------------------------------------------------------------
