@@ -138,6 +138,18 @@ def test_autosens_backs_off_fast_when_clipping():
     assert a.sens == start * 0.9
 
 
+def test_autosens_settles_with_headroom_never_pegs_ceiling():
+    # feed a steady loudest-bar level; sens must settle so the shown peak sits
+    # below 1.0 (rounded top, never flat-clipped) but still fills the frame.
+    a = AutoSens()
+    level = 0.5
+    for _ in range(600):
+        a.update(min(1.0, level * a.sens))
+    final = min(1.0, level * a.sens)
+    assert final < 0.85           # real headroom: not jammed against the top
+    assert final > 0.4            # but still filled, not dead
+
+
 def test_autosens_creeps_up_when_there_is_headroom():
     a = AutoSens(up=1.02, down=0.9, target=0.9)
     start = a.sens

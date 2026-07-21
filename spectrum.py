@@ -83,34 +83,40 @@ class AutoSens:
     the noise floor of an empty intro isn't amplified into a full frame.
     """
 
-    def __init__(self, up=1.004, down=0.9, target=0.9, ramp_cap=20,
-                 min_sens=0.02, max_sens=50.0, silence=0.02):
+    def __init__(self, up=1.004, down=0.9, target=0.6, overshoot=0.8,
+                 ramp_cap=20, min_sens=0.02, max_sens=30.0, silence=0.02):
         self.sens = 1.0
         self.up = up
         self.down = down
-        self.target = target
+        self.target = target          # creep up while the peak is below this
+        self.overshoot = overshoot    # duck once the peak climbs above this
         self.ramp_cap = ramp_cap
         self.min_sens = min_sens
         self.max_sens = max_sens
         self.silence = silence
-        self._quiet = 0  # consecutive frames of headroom since the last clip
+        self._quiet = 0  # consecutive frames of headroom since the last duck
 
     def update(self, peak):
-        """Adapt to this frame's tallest (already sens-scaled, clipped) bar."""
+        """Adapt to this frame's tallest (already sens-scaled, clipped) bar.
+
+        The gain settles so the loudest bar sits in the [target, overshoot]
+        band — filling the frame but leaving headroom, so it never flat-clips
+        against the top.
+        """
         peak = float(peak)
         if peak >= self.silence:
-            if peak >= 1.0:
-                self.sens *= self.down     # clipped -> duck fast
+            if peak >= self.overshoot:
+                self.sens *= self.down     # too tall -> duck fast, keep headroom
                 self._quiet = 0
             elif peak < self.target:
-                # Creep up, but accelerate the longer it's been since a clip:
+                # Creep up, but accelerate the longer it's been since a duck:
                 # gentle just after a beat (no per-beat pumping), fast into a
                 # sustained quiet section.
                 self._quiet += 1
                 step = 1.0 + (self.up - 1.0) * min(self._quiet, self.ramp_cap)
                 self.sens *= step
             else:
-                self._quiet = 0            # sitting near target -> hold
+                self._quiet = 0            # sitting in the band -> hold
         self.sens = float(min(self.max_sens, max(self.min_sens, self.sens)))
         return self.sens
 
