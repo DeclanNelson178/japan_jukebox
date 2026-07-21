@@ -84,6 +84,14 @@ def test_to_display_curve_boosts_quiet_bands():
     assert boosted[0] > linear[0]
 
 
+def test_noise_floor_is_absolute_autosens_cannot_amplify_subfloor():
+    # a band below the floor stays gated out no matter how high autosens drives
+    # sens — otherwise a quiet intro's noise gets amplified off the top.
+    bands = np.array([1.0])  # tiny magnitude, well below the floor
+    out = to_display(bands, n=8192, gain=20.0, noise_floor=0.2, sens=50.0)
+    assert out[0] == 0.0
+
+
 def test_to_display_noise_floor_gates_quiet_to_zero():
     # below the floor reads as empty (no permanent solid baseline); a loud band
     # still saturates at full height.

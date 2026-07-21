@@ -59,17 +59,18 @@ def to_display(bands, n, gain=20.0, curve=0.5, noise_floor=0.12, sens=1.0):
 
     Normalizing by the FFT size `n` makes the scale independent of the window
     length. The sub-linear `curve` (sqrt by default) lifts quiet bands so they
-    stay visible without blowing silence up to full height. `sens` is the
-    autosens gain that adapts to the music's level over time (1.0 = neutral).
-    `noise_floor` then gates out everything below that height and rescales what
-    remains, so the ever-present noise floor doesn't light every column's bottom
-    cell into a permanent solid baseline.
+    stay visible without blowing silence up to full height. `noise_floor` gates
+    out everything below that height (an *absolute* gate, so the ever-present
+    noise floor never lights a permanent baseline). Only then does `sens` — the
+    autosens gain that adapts to the music's level over time (1.0 = neutral) —
+    amplify what survived. Gating before amplifying is what stops a quiet
+    intro's noise from being driven off the top of the frame.
     """
     x = np.maximum(np.asarray(bands, dtype=np.float32), 0.0) / n * gain
-    height = np.clip(x ** curve * sens, 0.0, 1.0)
+    height = np.clip(x ** curve, 0.0, 1.0)
     if noise_floor > 0.0:
         height = np.clip((height - noise_floor) / (1.0 - noise_floor), 0.0, 1.0)
-    return height
+    return np.clip(height * sens, 0.0, 1.0)
 
 
 class AutoSens:
@@ -82,8 +83,8 @@ class AutoSens:
     the noise floor of an empty intro isn't amplified into a full frame.
     """
 
-    def __init__(self, up=1.004, down=0.9, target=0.9, ramp_cap=50,
-                 min_sens=0.02, max_sens=200.0, silence=0.02):
+    def __init__(self, up=1.004, down=0.9, target=0.9, ramp_cap=20,
+                 min_sens=0.02, max_sens=50.0, silence=0.02):
         self.sens = 1.0
         self.up = up
         self.down = down
