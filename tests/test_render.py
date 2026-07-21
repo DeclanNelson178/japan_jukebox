@@ -1,3 +1,5 @@
+import re
+
 import numpy as np
 
 from render import (
@@ -6,12 +8,19 @@ from render import (
     braille_waveform,
     column_glyphs,
     frame_payload,
+    color_spectrum_frame,
     lerp_color,
     level_to_block,
     sample_gradient,
     spectrum_frame,
     truecolor_fg,
 )
+
+ANSI = re.compile(r"\x1b\[[0-9;]*m")
+
+
+def _strip(s):
+    return ANSI.sub("", s)
 
 
 def test_frame_payload_is_synchronized_and_homed():
@@ -98,6 +107,22 @@ def test_spectrum_frame_partial_column_grows_from_the_bottom():
     lines = spectrum_frame([0.5], rows=4)  # half height => bottom two rows
     assert lines[-1] == "█" and lines[-2] == "█"
     assert lines[0] == " " and lines[1] == " "
+
+
+def test_color_spectrum_frame_visible_content_matches_plain():
+    vals = [0.5, 1.0, 0.0]
+    palette = [(0.0, (0, 0, 0)), (1.0, (255, 0, 0))]
+    plain = spectrum_frame(vals, 4)
+    colored = color_spectrum_frame(vals, 4, palette)
+    assert [_strip(line) for line in colored] == plain
+
+
+def test_color_spectrum_frame_is_a_vertical_gradient():
+    # top row uses the high end of the gradient, bottom row the low end
+    palette = [(0.0, (0, 0, 0)), (1.0, (255, 0, 0))]
+    colored = color_spectrum_frame([1.0], 3, palette)
+    assert "38;2;255;0;0" in colored[0]     # top = hot
+    assert "38;2;0;0;0" in colored[-1]       # bottom = cool
 
 
 def test_braille_waveform_dimensions():

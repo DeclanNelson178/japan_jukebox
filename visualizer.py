@@ -19,7 +19,13 @@ import tty
 
 import numpy as np
 
-from render import RESET, frame_payload, sample_gradient, spectrum_frame, truecolor_fg
+from render import (
+    RESET,
+    color_spectrum_frame,
+    frame_payload,
+    sample_gradient,
+    truecolor_fg,
+)
 from spectrum import (
     AutoSens,
     Gravity,
@@ -156,7 +162,7 @@ def _idle_body(paused, width, height, palette):
     return lines
 
 
-def _spectrum_body(engine, width, height, smoother, autosens, delay_samples):
+def _spectrum_body(engine, width, height, smoother, autosens, delay_samples, palette):
     """Log-spaced spectrum bars, one band per column, with V2 gravity motion.
 
     `delay_samples` steps the analysis window back to match what's audible now;
@@ -175,7 +181,7 @@ def _spectrum_body(engine, width, height, smoother, autosens, delay_samples):
     disp = np.clip(heights * autosens.sens, 0.0, 1.0)
     disp = smoother.update(disp)
     disp = monstercat_smooth(disp, MONSTERCAT)  # connect bars into rounded hills
-    return spectrum_frame(disp, height)
+    return color_spectrum_frame(disp, height, palette)
 
 
 class Screen:
@@ -287,7 +293,7 @@ def run(engine, title, palette_name="trap", fps=30):
                 [_header(title, engine.position_seconds, engine.duration_seconds,
                          width, palette)]
                 + _spectrum_body(engine, width, body_rows, smoother, autosens,
-                                 delay_samples)
+                                 delay_samples, palette)
                 + [_footer(width, PALETTE_ORDER[pal_idx], total_sync_ms)]
             )
             screen.draw(frame)

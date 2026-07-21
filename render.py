@@ -83,6 +83,23 @@ def spectrum_frame(values, rows):
     return ["".join(col[r] for col in cols) for r in range(rows - 1, -1, -1)]
 
 
+def color_spectrum_frame(values, rows, palette):
+    """`spectrum_frame` with a vertical palette gradient — one color per row.
+
+    A cell's color depends only on its height, so each output line takes a
+    single gradient sample (bottom row = low end, top row = high end) and one
+    color escape — cheap to draw. Taller parts of every bar read as the hot end
+    of the palette, giving the flame/spectrum look.
+    """
+    lines = spectrum_frame(values, rows)
+    span = max(1, rows - 1)
+    out = []
+    for r, line in enumerate(lines):
+        frac = (rows - 1 - r) / span  # 1.0 at the top row, 0.0 at the baseline
+        out.append(truecolor_fg(sample_gradient(palette, frac)) + line + RESET)
+    return out
+
+
 def truecolor_fg(rgb):
     """24-bit foreground color escape for an (r, g, b) tuple."""
     r, g, b = rgb
