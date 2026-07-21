@@ -23,10 +23,10 @@ from render import RESET, frame_payload, sample_gradient, spectrum_frame, trueco
 from spectrum import (
     AutoSens,
     Gravity,
+    band_heights,
     compute_bands,
     frequency_tilt,
     log_band_edges,
-    to_display,
 )
 
 # V1 spectrum tuning (see VISUALIZER_PLAN.md). A large window is required to
@@ -163,9 +163,11 @@ def _spectrum_body(engine, width, height, smoother, autosens, delay_samples):
     window = engine.latest_window(FFT_WINDOW, delay_samples)
     bands = compute_bands(window, engine.samplerate, edges)
     gain = RAW_GAIN * frequency_tilt(centers, FMIN, TILT_SLOPE)
-    disp = to_display(bands, FFT_WINDOW, gain=gain,
-                      noise_floor=NOISE_FLOOR, sens=autosens.sens)
-    autosens.update(float(disp.max()))  # adapt gain from this frame's peak
+    heights = band_heights(bands, FFT_WINDOW, gain=gain, noise_floor=NOISE_FLOOR)
+    # Feed autosens the *unclipped* peak so it can duck proportionally on a
+    # sudden loud section instead of crawling down while the frame stays pegged.
+    autosens.update(float(heights.max()) * autosens.sens)
+    disp = np.clip(heights * autosens.sens, 0.0, 1.0)
     disp = smoother.update(disp)
     return spectrum_frame(disp, height)
 

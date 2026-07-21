@@ -54,22 +54,29 @@ def frequency_tilt(centers, fmin, slope=0.4):
     return (np.asarray(centers, dtype=np.float32) / fmin) ** slope
 
 
-def to_display(bands, n, gain=20.0, curve=0.5, noise_floor=0.12, sens=1.0):
-    """Map raw band magnitudes to display heights in [0, 1].
+def band_heights(bands, n, gain=20.0, curve=0.5, noise_floor=0.12):
+    """Per-band display heights in [0, 1] *before* autosens — the signal level.
 
     Normalizing by the FFT size `n` makes the scale independent of the window
     length. The sub-linear `curve` (sqrt by default) lifts quiet bands so they
     stay visible without blowing silence up to full height. `noise_floor` gates
     out everything below that height (an *absolute* gate, so the ever-present
-    noise floor never lights a permanent baseline). Only then does `sens` — the
-    autosens gain that adapts to the music's level over time (1.0 = neutral) —
-    amplify what survived. Gating before amplifying is what stops a quiet
-    intro's noise from being driven off the top of the frame.
+    noise floor never lights a permanent baseline).
     """
     x = np.maximum(np.asarray(bands, dtype=np.float32), 0.0) / n * gain
     height = np.clip(x ** curve, 0.0, 1.0)
     if noise_floor > 0.0:
         height = np.clip((height - noise_floor) / (1.0 - noise_floor), 0.0, 1.0)
+    return height
+
+
+def to_display(bands, n, gain=20.0, curve=0.5, noise_floor=0.12, sens=1.0):
+    """`band_heights` amplified by the autosens `sens` and clipped for display.
+
+    Gating before amplifying (inside `band_heights`) is what stops a quiet
+    intro's noise from being driven off the top of the frame.
+    """
+    height = band_heights(bands, n, gain=gain, curve=curve, noise_floor=noise_floor)
     return np.clip(height * sens, 0.0, 1.0)
 
 
@@ -83,11 +90,11 @@ class AutoSens:
     the noise floor of an empty intro isn't amplified into a full frame.
     """
 
-    def __init__(self, up=1.004, down=0.9, target=0.6, overshoot=0.8,
+    def __init__(self, up=1.004, down=0.5, target=0.6, overshoot=0.8,
                  ramp_cap=20, min_sens=0.02, max_sens=30.0, silence=0.02):
         self.sens = 1.0
         self.up = up
-        self.down = down
+        self.down = down              # strongest single-frame gain cut (floor)
         self.target = target          # creep up while the peak is below this
         self.overshoot = overshoot    # duck once the peak climbs above this
         self.ramp_cap = ramp_cap
@@ -97,21 +104,25 @@ class AutoSens:
         self._quiet = 0  # consecutive frames of headroom since the last duck
 
     def update(self, peak):
-        """Adapt to this frame's tallest (already sens-scaled, clipped) bar.
+        """Adapt to this frame's tallest bar (the *unclipped* height, so a big
+        overshoot is visible as a big number rather than saturating at 1.0).
 
-        The gain settles so the loudest bar sits in the [target, overshoot]
-        band — filling the frame but leaving headroom, so it never flat-clips
-        against the top.
+        On overshoot the gain is cut *proportionally* so the peak lands back at
+        `target` in one step (fast attack) — a quiet intro that ramped the gain
+        up then dropped into a loud section recovers immediately instead of
+        crawling down and leaving the frame pegged for a second. Below target
+        it creeps up (slow release), accelerating into a sustained quiet part
+        without pumping between beats. The gain settles so the loudest bar sits
+        in the [target, overshoot] band — filled, but with headroom.
         """
         peak = float(peak)
         if peak >= self.silence:
             if peak >= self.overshoot:
-                self.sens *= self.down     # too tall -> duck fast, keep headroom
+                # proportional duck to target, floored so one transient spike
+                # can't nuke the whole gain
+                self.sens *= max(self.down, self.target / peak)
                 self._quiet = 0
             elif peak < self.target:
-                # Creep up, but accelerate the longer it's been since a duck:
-                # gentle just after a beat (no per-beat pumping), fast into a
-                # sustained quiet section.
                 self._quiet += 1
                 step = 1.0 + (self.up - 1.0) * min(self._quiet, self.ramp_cap)
                 self.sens *= step

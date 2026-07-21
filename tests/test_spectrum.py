@@ -139,15 +139,32 @@ def test_autosens_backs_off_fast_when_clipping():
 
 
 def test_autosens_settles_with_headroom_never_pegs_ceiling():
-    # feed a steady loudest-bar level; sens must settle so the shown peak sits
-    # below 1.0 (rounded top, never flat-clipped) but still fills the frame.
+    # feed the unclipped loudest-bar level; sens must settle so the shown peak
+    # sits below 1.0 (rounded top, never flat-clipped) but still fills.
     a = AutoSens()
     level = 0.5
     for _ in range(600):
-        a.update(min(1.0, level * a.sens))
+        a.update(level * a.sens)      # unclipped, as the live path feeds it
     final = min(1.0, level * a.sens)
     assert final < 0.85           # real headroom: not jammed against the top
     assert final > 0.4            # but still filled, not dead
+
+
+def test_autosens_ducks_fast_on_sudden_loud_section():
+    # gain ramped up during a quiet intro; a sustained loud drop must recover
+    # in a few frames, not crawl down leaving the frame pegged for a second.
+    a = AutoSens()
+    a.sens = 10.0                     # as if ramped up over a quiet intro
+    for _ in range(6):                # sustained loud section: raw peak ~0.5
+        a.update(0.5 * a.sens)
+    shown = 0.5 * a.sens
+    assert shown < a.overshoot + 0.02  # back within the headroom band, quickly
+
+    # a much slower old-style 0.9 nudge would still be pegged after 6 frames
+    slow = 10.0
+    for _ in range(6):
+        slow *= 0.9
+    assert 0.5 * slow >= 1.0
 
 
 def test_autosens_creeps_up_when_there_is_headroom():
