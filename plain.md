@@ -1,7 +1,8 @@
 # Visualizer — current state
 
 Where the cava-recipe rebuild stands (see `VISUALIZER_PLAN.md` for the full plan).
-Phases V0–V3 are built, tested, and vetted. Next up: **V4**, then **V5**.
+**All phases V0–V5 are built and tested (75 passing).** V0–V3 vetted live; V4 and V5
+awaiting a final look.
 
 ## Done
 
@@ -18,6 +19,12 @@ Phases V0–V3 are built, tested, and vetted. Next up: **V4**, then **V5**.
 | V3 fix | `85e35e4` | Gate is absolute (before gain) so a quiet intro's noise isn't amplified. |
 | V3 fix | `4d346ea` | `[target, overshoot]` band gives headroom; loudest bar never pegs the top. |
 | V3 fix | `a36f9d4` | Proportional fast duck on the unclipped peak; loud sections recover in ~5 frames, not ~15. |
+| V4 | `7274974` | Monstercat rounding: neighbor-spread connects bars into rounded hills. |
+| V5 | `6513d05` | Gradient color on the bars (vertical, per-palette). |
+| V5 | `047cbac` | Beat pulse: kick brightens the frame toward white. |
+| V5 | `4b05a00` | Help overlay (`?`). |
+| V5 | `afdd3fc` | Centered mirror mode (`m`). |
+| V5 | `0073d9f` | Braille top-edge mode (`b`). |
 
 ## Architecture
 
@@ -31,9 +38,13 @@ Phases V0–V3 are built, tested, and vetted. Next up: **V4**, then **V5**.
   - `to_display` — `band_heights` × autosens `sens`, clipped
   - `Gravity` — snap-up / accelerating-gravity-fall motion
   - `AutoSens` — one adaptive gain; proportional fast duck, slow accelerating creep-up
-  - (`Smoother`, `PeakHold`, `BeatDetector` present, used by later phases)
-- **`render.py`** — pure glyph/color: `spectrum_frame` (bottom-anchored blocks), `column_glyphs`,
-  `frame_payload` (atomic DEC-2026 present), gradients, `braille_waveform`.
+  - `monstercat_smooth` — neighbor spread → rounded hills (O(n) two-pass)
+  - `BeatPulse` — `BeatDetector` + decaying 0..1 level for the beat flash
+  - (`Smoother`, `PeakHold` present; spare)
+- **`render.py`** — pure glyph/color: `spectrum_frame` (bottom-anchored blocks),
+  `color_spectrum_frame` (gradient + beat intensity), `mirror_spectrum_frame` (centered),
+  `braille_spectrum_frame` (braille edge), `column_glyphs`, `frame_payload` (atomic DEC-2026),
+  gradients, `braille_waveform`.
 - **`visualizer.py`** — I/O shell: raw terminal, non-blocking input, 30 fps loop, `_spectrum_body`
   wires the pipeline (bands → tilt → band_heights → autosens on unclipped peak → clip → gravity →
   frame). Per-band `Gravity` is rebuilt on resize; `AutoSens` persists per song.
@@ -54,8 +65,8 @@ frame  = spectrum_frame(disp, rows)
 
 ## Controls
 
-`space` pause · `→`/`n` skip · `↑`/`↓` volume · `[` `]` sync trim (±10 ms) · `g` palette · `q` quit.
-Footer shows the total sync offset and current palette.
+`space` pause · `→`/`n` skip · `↑`/`↓` volume · `[` `]` sync trim (±10 ms) · `g` palette ·
+`m` mirror/bars · `b` braille/blocks · `?` help overlay · `q` quit.
 
 ## Tuning knobs (`visualizer.py` top, and `AutoSens.__init__`)
 
@@ -67,19 +78,18 @@ Footer shows the total sync offset and current palette.
 | `TILT_SLOPE` | 0.4 | treble lift; higher = hotter highs |
 | `NOISE_FLOOR` | 0.08 | absolute gate; higher = more silence trimmed |
 | `ATTACK` / `GRAVITY` | 0.6 / 0.0025 | bar rise speed / fall acceleration |
+| `MONSTERCAT` | 1.5 | neighbor spread; closer to 1 = rounder |
+| `PULSE_AMOUNT` | 0.5 | how much a kick brightens the frame |
 | `AutoSens target/overshoot` | 0.6 / 0.8 | where the loudest bar settles (headroom band) |
 | `AutoSens down` | 0.5 | max single-frame gain cut (lower = faster recovery, more pump risk) |
 
 ## Runtime
 
 Run/test with the conda env python: `/Users/declannelson/miniconda3/envs/jukebox/bin/python3`
-(or the `trappin` alias). Tests: `python3 -m pytest -q` (58 passing). User runs in iTerm2.
+(or the `trappin` alias). Tests: `python3 -m pytest -q` (75 passing). User runs in iTerm2.
 
 ## Remaining
 
-- **V4 — Monstercat rounding**: spread each bar into its neighbors with a distance falloff so the
-  tops connect into smooth rounded hills (a bass hit = a round swell, not a spike). The "looks like
-  it should" moment. Knob: monstercat spread (~1.5 start).
-- **V5 — Polish**: gradient color + palettes (trap · aurora · ice · sunset), beat pulse, help
-  overlay. Options: mirror the spectrum around a center axis (centered-waveform framing); braille
-  top edge for an extra-smooth curve.
+Nothing on the plan is outstanding — V0–V5 are all built. Left to do is a final live vet of
+V4 (rounding) and the V5 look toggles (`m` mirror, `b` braille), and tuning the knobs above to
+taste.
