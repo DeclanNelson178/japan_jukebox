@@ -27,6 +27,7 @@ from spectrum import (
     compute_bands,
     frequency_tilt,
     log_band_edges,
+    monstercat_smooth,
 )
 
 # V1 spectrum tuning (see VISUALIZER_PLAN.md). A large window is required to
@@ -44,6 +45,10 @@ NOISE_FLOOR = 0.08
 # is how hard they fall — higher = snappier drop.
 ATTACK = 0.6
 GRAVITY = 0.0025
+
+# V4 monstercat rounding: how far each bar spreads into its neighbors. Closer
+# to 1 = wider spread / rounder hills; larger = tighter.
+MONSTERCAT = 1.5
 
 # Header accent gradients (kept from the old visual; only the header uses them
 # in V0, but the palette machinery returns in the polish phase).
@@ -169,6 +174,7 @@ def _spectrum_body(engine, width, height, smoother, autosens, delay_samples):
     autosens.update(float(heights.max()) * autosens.sens)
     disp = np.clip(heights * autosens.sens, 0.0, 1.0)
     disp = smoother.update(disp)
+    disp = monstercat_smooth(disp, MONSTERCAT)  # connect bars into rounded hills
     return spectrum_frame(disp, height)
 
 

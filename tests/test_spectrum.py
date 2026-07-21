@@ -9,6 +9,7 @@ from spectrum import (
     compute_bands,
     frequency_tilt,
     log_band_edges,
+    monstercat_smooth,
     to_display,
 )
 
@@ -196,6 +197,25 @@ def test_autosens_clamped_to_bounds():
     for _ in range(10):
         lo.update(1.0)
     assert lo.sens >= 0.5
+
+
+def test_monstercat_spreads_a_spike_into_a_symmetric_skirt():
+    # each bar spreads into its neighbors with a 1/base**distance falloff, so a
+    # lone spike becomes a rounded hill instead of a single spike.
+    out = monstercat_smooth([0.0, 0.0, 1.0, 0.0, 0.0], base=2.0)
+    assert np.allclose(out, [0.25, 0.5, 1.0, 0.5, 0.25])
+
+
+def test_monstercat_never_lowers_a_bar_and_keeps_the_peak():
+    vals = np.array([0.1, 0.9, 0.2, 0.0, 0.5])
+    out = monstercat_smooth(vals, base=1.5)
+    assert np.all(out >= vals - 1e-6)          # only ever raises neighbors
+    assert np.isclose(out.max(), vals.max())   # the peak height is preserved
+
+
+def test_monstercat_fills_the_valley_between_two_peaks():
+    out = monstercat_smooth([1.0, 0.0, 1.0], base=2.0)
+    assert np.isclose(out[1], 0.5)             # valley raised by both skirts
 
 
 def test_smoother_attack_then_decay():

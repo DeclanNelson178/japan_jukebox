@@ -80,6 +80,25 @@ def to_display(bands, n, gain=20.0, curve=0.5, noise_floor=0.12, sens=1.0):
     return np.clip(height * sens, 0.0, 1.0)
 
 
+def monstercat_smooth(values, base=1.5):
+    """Spread each bar into its neighbors with a 1/base**distance falloff.
+
+    This is the "monstercat" smoothing that connects independent spiky bars into
+    smooth rounded hills — a bass hit becomes a round swell, not a spike. Each
+    bar is raised to the tallest skirt reaching it from any peak; `base` sets the
+    falloff (closer to 1 = wider spread / rounder, larger = tighter).
+
+    Implemented as two O(n) passes (a decaying running max left-to-right then
+    right-to-left), which is equivalent to the O(n^2) max-of-all-skirts form.
+    """
+    out = np.array(values, dtype=np.float32, copy=True)
+    for i in range(1, len(out)):
+        out[i] = max(out[i], out[i - 1] / base)
+    for i in range(len(out) - 2, -1, -1):
+        out[i] = max(out[i], out[i + 1] / base)
+    return out
+
+
 class AutoSens:
     """cava-style automatic gain: a single sensitivity multiplier that tracks
     the music's level so both quiet intros and loud drops fill the frame.
