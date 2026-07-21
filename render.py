@@ -105,6 +105,45 @@ def color_spectrum_frame(values, rows, palette, intensity=1.0):
     return out
 
 
+def mirror_spectrum_frame(values, rows, palette, intensity=1.0):
+    """Rounded spectrum mirrored around a horizontal center axis (waveform look).
+
+    Each column grows symmetrically out from the middle. The fractional tip is a
+    half block that fills toward the center — `▄` above the axis, `▀` below — so
+    both edges taper inward; body cells are full blocks. Color is a center-out
+    gradient (axis = low end, edges = high end), one sample per row, with the
+    same `intensity` beat-pulse brightening as `color_spectrum_frame`.
+    """
+    half = rows // 2
+    has_center = rows % 2 == 1
+    cols = []
+    for v in values:
+        v = max(0.0, min(1.0, float(v)))
+        ext = v * half
+        full = int(ext)
+        tip = (ext - full) >= 0.5
+        col = []
+        for d in range(half, 0, -1):                     # top: outer -> center
+            col.append("█" if d <= full else ("▄" if d == full + 1 and tip else " "))
+        if has_center:
+            col.append("█" if v > 0 else " ")
+        for d in range(1, half + 1):                     # bottom: center -> outer
+            col.append("█" if d <= full else ("▀" if d == full + 1 and tip else " "))
+        cols.append(col)
+
+    lift = min(1.0, max(0.0, intensity - 1.0))
+    center = (rows - 1) / 2.0
+    lines = []
+    for r in range(rows):
+        dist = abs(r - center) / center if center else 0.0  # 0 axis .. 1 edge
+        rgb = sample_gradient(palette, dist)
+        if lift:
+            rgb = lerp_color(rgb, (255, 255, 255), lift)
+        row = "".join(col[r] for col in cols)
+        lines.append(truecolor_fg(rgb) + row + RESET)
+    return lines
+
+
 def truecolor_fg(rgb):
     """24-bit foreground color escape for an (r, g, b) tuple."""
     r, g, b = rgb

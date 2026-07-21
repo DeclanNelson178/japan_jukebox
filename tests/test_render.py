@@ -11,10 +11,13 @@ from render import (
     color_spectrum_frame,
     lerp_color,
     level_to_block,
+    mirror_spectrum_frame,
     sample_gradient,
     spectrum_frame,
     truecolor_fg,
 )
+
+_PAL = [(0.0, (0, 0, 0)), (1.0, (255, 0, 0))]
 
 ANSI = re.compile(r"\x1b\[[0-9;]*m")
 
@@ -133,6 +136,37 @@ def test_color_spectrum_frame_intensity_brightens_toward_white():
     assert "38;2;100;0;0" in normal[0]
     assert "38;2;100;0;0" not in pulsed[0]      # shifted brighter
     assert "38;2;178;128;128" in pulsed[0]      # halfway-ish toward white
+
+
+def test_mirror_spectrum_frame_dimensions():
+    lines = mirror_spectrum_frame([0.0, 0.5, 1.0], 6, _PAL)
+    assert len(lines) == 6
+    for line in lines:
+        assert len(_strip(line)) == 3
+
+
+def test_mirror_full_value_fills_every_cell():
+    lines = mirror_spectrum_frame([1.0], 4, _PAL)
+    assert all(_strip(line) == "█" for line in lines)
+
+
+def test_mirror_zero_value_is_blank():
+    lines = mirror_spectrum_frame([0.0], 5, _PAL)
+    assert all(_strip(line) == " " for line in lines)
+
+
+def test_mirror_is_vertically_symmetric():
+    lines = [_strip(line) for line in mirror_spectrum_frame([0.5], 6, _PAL)]
+    filled = [line[0] != " " for line in lines]
+    assert filled == filled[::-1]        # top half mirrors the bottom half
+
+
+def test_mirror_intensity_brightens_toward_white():
+    plain = mirror_spectrum_frame([1.0], 2, [(0.0, (100, 0, 0)), (1.0, (100, 0, 0))])
+    bright = mirror_spectrum_frame([1.0], 2, [(0.0, (100, 0, 0)), (1.0, (100, 0, 0))],
+                                   intensity=1.5)
+    assert "38;2;100;0;0" in plain[0]
+    assert "38;2;100;0;0" not in bright[0]
 
 
 def test_braille_waveform_dimensions():

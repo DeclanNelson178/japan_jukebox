@@ -23,6 +23,7 @@ from render import (
     RESET,
     color_spectrum_frame,
     frame_payload,
+    mirror_spectrum_frame,
     sample_gradient,
     truecolor_fg,
 )
@@ -146,7 +147,7 @@ def _header(title, pos, dur, width, palette):
 
 
 def _footer(width, palette_name, sync_ms):
-    keys = "space pause · → skip · ↑↓ vol · [ ] sync · g palette · ? help · q quit"
+    keys = "space pause · → skip · ↑↓ vol · g palette · m mirror · ? help · q quit"
     return f"\x1b[2m{keys}   sync {sync_ms:+d}ms [{palette_name}]{RESET}"
 
 
@@ -172,6 +173,7 @@ _HELP_ROWS = [
     ("↑  ↓", "volume"),
     ("[  ]", "sync offset"),
     ("g", "cycle palette"),
+    ("m", "mirror / bars"),
     ("?", "toggle this help"),
     ("q", "quit"),
 ]
@@ -201,12 +203,13 @@ def _help_lines(width, height, palette):
 
 
 def _spectrum_body(engine, width, height, smoother, autosens, beat, delay_samples,
-                   palette):
+                   palette, mirror=False):
     """Log-spaced spectrum bars, one band per column, with V2 gravity motion.
 
     `delay_samples` steps the analysis window back to match what's audible now;
     `autosens` adapts the overall gain so quiet and loud sections both fill up;
-    `beat` pulses the brightness on the kick.
+    `beat` pulses the brightness on the kick; `mirror` centers the spectrum
+    around a horizontal axis instead of anchoring it to the baseline.
     """
     n_bands = max(1, width)
     edges = log_band_edges(n_bands, FMIN, min(FMAX, engine.samplerate / 2.0))
@@ -223,9 +226,9 @@ def _spectrum_body(engine, width, height, smoother, autosens, beat, delay_sample
     disp = monstercat_smooth(disp, MONSTERCAT)  # connect bars into rounded hills
     # Kick energy = the lowest bands; a beat flashes the whole frame brighter.
     bass = float(bands[:max(1, n_bands // 8)].sum())
-    level = beat.update(bass)
-    return color_spectrum_frame(disp, height, palette,
-                                intensity=1.0 + level * PULSE_AMOUNT)
+    intensity = 1.0 + beat.update(bass) * PULSE_AMOUNT
+    render = mirror_spectrum_frame if mirror else color_spectrum_frame
+    return render(disp, height, palette, intensity=intensity)
 
 
 class Screen:
@@ -292,6 +295,7 @@ def run(engine, title, palette_name="trap", fps=30):
     autosens = AutoSens()
     beat = BeatPulse()
     show_help = False
+    mirror = False
     # Manual fine-tune (ms) on top of the engine's measured output latency, so
     # the user can dial the visuals into perfect sync when the reported
     # Bluetooth latency is a little off.
@@ -330,6 +334,8 @@ def run(engine, title, palette_name="trap", fps=30):
                         sync_trim_ms += 10
                     elif k == "?":
                         show_help = not show_help
+                    elif k == "m":
+                        mirror = not mirror
 
             delay_samples = max(
                 0, engine.latency_samples + sync_trim_ms * engine.samplerate // 1000
@@ -340,7 +346,7 @@ def run(engine, title, palette_name="trap", fps=30):
             body = (
                 _help_lines(width, body_rows, palette) if show_help
                 else _spectrum_body(engine, width, body_rows, smoother, autosens,
-                                    beat, delay_samples, palette)
+                                    beat, delay_samples, palette, mirror)
             )
             frame = (
                 [_header(title, engine.position_seconds, engine.duration_seconds,
