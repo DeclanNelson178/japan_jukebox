@@ -125,6 +125,16 @@ def test_color_spectrum_frame_is_a_vertical_gradient():
     assert "38;2;0;0;0" in colored[-1]       # bottom = cool
 
 
+def test_color_spectrum_frame_intensity_brightens_toward_white():
+    # a beat pulse lifts the colors toward white
+    palette = [(0.0, (100, 0, 0)), (1.0, (100, 0, 0))]
+    normal = color_spectrum_frame([1.0], 1, palette, intensity=1.0)
+    pulsed = color_spectrum_frame([1.0], 1, palette, intensity=1.5)
+    assert "38;2;100;0;0" in normal[0]
+    assert "38;2;100;0;0" not in pulsed[0]      # shifted brighter
+    assert "38;2;178;128;128" in pulsed[0]      # halfway-ish toward white
+
+
 def test_braille_waveform_dimensions():
     samples = np.zeros(64, dtype=np.float32)
     rows = braille_waveform(samples, width=20, rows=3)

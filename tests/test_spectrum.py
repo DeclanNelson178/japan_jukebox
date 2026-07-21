@@ -3,6 +3,7 @@ import numpy as np
 from spectrum import (
     AutoSens,
     BeatDetector,
+    BeatPulse,
     Gravity,
     PeakHold,
     Smoother,
@@ -239,6 +240,16 @@ def test_peak_hold_jumps_up_to_new_max():
     ph = PeakHold(size=1, decay=0.02)
     ph.update(np.array([0.3]))
     assert np.isclose(ph.update(np.array([0.9]))[0], 0.9)
+
+
+def test_beat_pulse_jumps_to_full_on_a_beat_then_decays():
+    bp = BeatPulse(decay=0.5, sensitivity=1.5, memory=0.8)
+    for _ in range(20):
+        bp.update(1.0)          # steady -> no beat, level stays 0
+    assert bp.level == 0.0
+    assert bp.update(5.0) == 1.0   # spike -> beat -> full pulse
+    assert bp.update(1.0) == 0.5   # decays back down
+    assert bp.update(1.0) == 0.25
 
 
 def test_beat_detector_fires_on_spike_not_on_steady():

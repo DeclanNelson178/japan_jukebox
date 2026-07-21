@@ -151,6 +151,25 @@ class AutoSens:
         return self.sens
 
 
+class BeatPulse:
+    """A 0..1 pulse level that snaps to full on a detected beat and decays.
+
+    Wraps `BeatDetector`; drives a brief brightness flash on the kick.
+    """
+
+    def __init__(self, decay=0.85, **beat_kwargs):
+        self.det = BeatDetector(**beat_kwargs)
+        self.decay = decay
+        self.level = 0.0
+
+    def update(self, energy):
+        if self.det.update(energy):
+            self.level = 1.0
+        else:
+            self.level *= self.decay
+        return self.level
+
+
 class Gravity:
     """cava-style asymmetric motion: snap up, fall under accelerating gravity.
 

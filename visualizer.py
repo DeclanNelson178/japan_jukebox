@@ -28,6 +28,7 @@ from render import (
 )
 from spectrum import (
     AutoSens,
+    BeatPulse,
     Gravity,
     band_heights,
     compute_bands,
@@ -55,6 +56,9 @@ GRAVITY = 0.0025
 # V4 monstercat rounding: how far each bar spreads into its neighbors. Closer
 # to 1 = wider spread / rounder hills; larger = tighter.
 MONSTERCAT = 1.5
+
+# V5 beat pulse: how much a detected kick brightens the frame (toward white).
+PULSE_AMOUNT = 0.5
 
 # Header accent gradients (kept from the old visual; only the header uses them
 # in V0, but the palette machinery returns in the polish phase).
@@ -162,11 +166,13 @@ def _idle_body(paused, width, height, palette):
     return lines
 
 
-def _spectrum_body(engine, width, height, smoother, autosens, delay_samples, palette):
+def _spectrum_body(engine, width, height, smoother, autosens, beat, delay_samples,
+                   palette):
     """Log-spaced spectrum bars, one band per column, with V2 gravity motion.
 
     `delay_samples` steps the analysis window back to match what's audible now;
-    `autosens` adapts the overall gain so quiet and loud sections both fill up.
+    `autosens` adapts the overall gain so quiet and loud sections both fill up;
+    `beat` pulses the brightness on the kick.
     """
     n_bands = max(1, width)
     edges = log_band_edges(n_bands, FMIN, min(FMAX, engine.samplerate / 2.0))
@@ -181,7 +187,11 @@ def _spectrum_body(engine, width, height, smoother, autosens, delay_samples, pal
     disp = np.clip(heights * autosens.sens, 0.0, 1.0)
     disp = smoother.update(disp)
     disp = monstercat_smooth(disp, MONSTERCAT)  # connect bars into rounded hills
-    return color_spectrum_frame(disp, height, palette)
+    # Kick energy = the lowest bands; a beat flashes the whole frame brighter.
+    bass = float(bands[:max(1, n_bands // 8)].sum())
+    level = beat.update(bass)
+    return color_spectrum_frame(disp, height, palette,
+                                intensity=1.0 + level * PULSE_AMOUNT)
 
 
 class Screen:
@@ -246,6 +256,7 @@ def run(engine, title, palette_name="trap", fps=30):
     smoother = None
     sm_width = None
     autosens = AutoSens()
+    beat = BeatPulse()
     # Manual fine-tune (ms) on top of the engine's measured output latency, so
     # the user can dial the visuals into perfect sync when the reported
     # Bluetooth latency is a little off.
@@ -293,7 +304,7 @@ def run(engine, title, palette_name="trap", fps=30):
                 [_header(title, engine.position_seconds, engine.duration_seconds,
                          width, palette)]
                 + _spectrum_body(engine, width, body_rows, smoother, autosens,
-                                 delay_samples, palette)
+                                 beat, delay_samples, palette)
                 + [_footer(width, PALETTE_ORDER[pal_idx], total_sync_ms)]
             )
             screen.draw(frame)

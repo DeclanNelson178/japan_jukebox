@@ -83,20 +83,25 @@ def spectrum_frame(values, rows):
     return ["".join(col[r] for col in cols) for r in range(rows - 1, -1, -1)]
 
 
-def color_spectrum_frame(values, rows, palette):
+def color_spectrum_frame(values, rows, palette, intensity=1.0):
     """`spectrum_frame` with a vertical palette gradient — one color per row.
 
     A cell's color depends only on its height, so each output line takes a
     single gradient sample (bottom row = low end, top row = high end) and one
     color escape — cheap to draw. Taller parts of every bar read as the hot end
-    of the palette, giving the flame/spectrum look.
+    of the palette, giving the flame/spectrum look. `intensity` > 1 lifts the
+    colors toward white for a beat-pulse flash.
     """
     lines = spectrum_frame(values, rows)
     span = max(1, rows - 1)
+    lift = min(1.0, max(0.0, intensity - 1.0))
     out = []
     for r, line in enumerate(lines):
         frac = (rows - 1 - r) / span  # 1.0 at the top row, 0.0 at the baseline
-        out.append(truecolor_fg(sample_gradient(palette, frac)) + line + RESET)
+        rgb = sample_gradient(palette, frac)
+        if lift:
+            rgb = lerp_color(rgb, (255, 255, 255), lift)
+        out.append(truecolor_fg(rgb) + line + RESET)
     return out
 
 
